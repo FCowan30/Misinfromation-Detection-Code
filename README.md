@@ -1,0 +1,1 @@
+This is a misinformation detection Project for a final year honours project, the goal is to use Machine learning to gain insight into the authentisity of statements and to detect misinformation.
