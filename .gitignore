@@ -1,0 +1,33 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (keep folder, don't commit contents)
+data/
+*.csv
+*.tsv
+*.jsonl
+
+# Models / outputs
+models/
+checkpoints/
+runs/
+wandb/
+
+# Hugging Face / caches
+.cache/
+huggingface/
+transformers/
+datasets/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
