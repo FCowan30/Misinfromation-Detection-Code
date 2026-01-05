@@ -34,7 +34,7 @@ def Load_training_data():
     if df_true.empty:
         raise ValueError("The true news dataset is empty.")
 
-    print("Dataset loaded successfuylly.")
+    print("Dataset loaded successfully.")
 
     return df_fake, df_true
 
@@ -51,11 +51,43 @@ def label_combine_data(df_fake, df_true):
 
     print("Data preprocessed successfully.")
     print("Dataset shape:", df.shape)
-    print(df.head(5))
 
+    return df
+
+def data_cleaning(df):
+    # Drop unnecessary columns
+    columns_to_drop = ["title", "subject", "date"]
+    df = df.drop(columns=columns_to_drop, errors='ignore')
+
+    # Check for missing values
+    if df.isnull().values.any():
+        df = df.dropna().reset_index(drop=True)
+        print("Missing values found and removed.")
+    else:
+        print("No missing values found.")
+    
+    #check for duplicated rows
+    if df.duplicated().any():
+        df = df.drop_duplicates().reset_index(drop=True)
+        print("Duplicate rows found and removed.")
+
+    print("Data cleaning completed.")
+    print("Cleaned dataset shape:", df.shape)
+
+    return df
+
+def BERT_tokenize_text(df):
+    # Placeholder for BERT tokenization logic
+    
+    return df
+
+def CLIP_tokenize_text_Image(df):
+    # Placeholder for CLIP tokenization logic
+    
     return df
 
 # Testing the function directly from file.
 if __name__ == "__main__":
     df_Fake, df_True = Load_training_data()
     df = label_combine_data(df_Fake, df_True)
+    df_cleaned = data_cleaning(df)
