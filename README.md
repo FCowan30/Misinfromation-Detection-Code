@@ -7,3 +7,5 @@ In order to run this system:
 
 Returning users: 
 1. start Python Enviroment ".\.venv\Scripts\Activate.ps1"
+2. run files for single testing "python filename.py"
+3. ensure requirements are updated after isntalling packages with "pip freeze > requirements.txt"
