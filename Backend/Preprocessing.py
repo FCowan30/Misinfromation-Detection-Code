@@ -164,6 +164,19 @@ def CLIP_tokenize_text_Image(df):
     
     return df
 
+from pathlib import Path
+
+out_dir = Path("artifacts/tokenized")
+out_dir.mkdir(parents=True, exist_ok=True)
+
+train_ds.save_to_disk(out_dir / "train")
+eval_ds.save_to_disk(out_dir / "eval")
+
+print("Saved tokenized datasets to:", out_dir)
+
+
+
+
 # Testing the function directly from file.
 if __name__ == "__main__":
     df_Fake, df_True = Load_training_data()
