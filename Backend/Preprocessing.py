@@ -1,13 +1,13 @@
-def Load_training_data():
     # import pandas with error handling.
-    try:
-        import pandas as pd
-    except ImportError as e:
-        raise ImportError(
-            "Pandas is required to run this script (Preproecessing.py)." \
-            "Please install it using 'pip install pandas'."
-    ) from e 
+try:
+    import pandas as pd
+except ImportError as e:
+    raise ImportError(
+        "Pandas is required to run this script (Preproecessing.py)." \
+        "Please install it using 'pip install pandas'."
+) from e 
 
+def Load_training_data():
     # load dataset
     # ensure Files exist, are accessible, and not empty.
     try:
@@ -155,7 +155,7 @@ def build_tokenized_splits(
 
     print(train_ds[0].keys())
     print("Tokenized datasets created successfully.")
-    
+
 
     return train_ds, eval_ds, tokenizer, data_collator
 
@@ -169,4 +169,4 @@ if __name__ == "__main__":
     df_Fake, df_True = Load_training_data()
     df = label_combine_data(df_Fake, df_True)
     df_cleaned = data_cleaning(df)
-    Cleaned_Tokenised_df = BERT_tokenize_text(df_cleaned)
+    Cleaned_Tokenised_df = build_tokenized_splits(df_cleaned)
