@@ -1,14 +1,58 @@
-#Backend/Explainer/Bert_Explainer.py
 from __future__ import annotations
 
-from dataclassesfrom import dataclass
-from typing import Dict,List,Any
-import numpy as np
-import torch
-import shape 
-from scipy.special import softmax
+# -----------------------------
+# Standard library imports
+# -----------------------------
+from dataclasses import dataclass
+from typing import Dict, List, Any
 
-from backend.Models.DistillBERT_loader import load_distilbert
+# -----------------------------
+# Third-party imports (guarded)
+# -----------------------------
+try:
+    import numpy as np
+except ImportError as e:
+    raise ImportError(
+        "NumPy is required for SHAP explainability. "
+        "Install it with: pip install numpy"
+    ) from e
+
+try:
+    import torch
+except ImportError as e:
+    raise ImportError(
+        "PyTorch is required for DistilBERT inference. "
+        "Install it with: pip install torch"
+    ) from e
+
+try:
+    import shap
+except ImportError as e:
+    raise ImportError(
+        "SHAP is required for explainability. "
+        "Install it with: pip install shap"
+    ) from e
+
+try:
+    from scipy.special import softmax
+except ImportError as e:
+    raise ImportError(
+        "SciPy is required for probability calculations. "
+        "Install it with: pip install scipy"
+    ) from e
+
+# -----------------------------
+# Local project imports (guarded)
+# -----------------------------
+try:
+    from Backend.Models.DistillBERT_loader import load_distilbert
+except ImportError as e:
+    raise ImportError(
+        "Failed to import DistilBERT loader. "
+        "Ensure Backend/Models/DistillBERT_loader.py exists and "
+        "Backend is a valid Python package."
+    ) from e
+
 
 LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true
 
@@ -16,38 +60,15 @@ LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true
 #Model + tokenizer (loaded once)
 #--------------------------------------------
 
-_tokenizer, __model = load_distilbert()
+_tokenizer, _model = load_distilbert()
 
 # shap is more stable on cpu
 _model.to("cpu")
 _model.eval()
 
-# Backend/explainers/bert_shap_explainer.py
-from __future__ import annotations
-
 import re
-from dataclasses import dataclass
-from typing import Dict, List, Any
-
-import numpy as np
-import torch
-import shap
-from scipy.special import softmax
-
-# Adjust this import to match your exact casing/location
-from Backend.Models.DistillBERT_loader import load_distilbert
 
 LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true
-
-
-# -----------------------------
-# Model + tokenizer (loaded once)
-# -----------------------------
-_tokenizer, _model = load_distilbert()
-# SHAP is more stable on CPU (especially on Windows)
-_model.to("cpu")
-_model.eval()
-
 
 # -----------------------------
 # Prediction function for SHAP
@@ -99,9 +120,9 @@ class Flag:
 def _contains_any(text_lc: str, phrases: List[str]) -> List[str]:
     return [p for p in phrases if p in text_lc]
 
-def detect_flags(text_lc: str, top_tokens: List[str]) -> List[Flag]:
+def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
     text_lc = text.lower()
-    top_set = set([t.lower() for t in top_tokens])
+    top_set = set(t.lower() for t in top_tokens)
 
     conspiracy_phrases = [
         "deep state", 
@@ -143,7 +164,7 @@ def detect_flags(text_lc: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
     
-        emotion_hits = sorted(list(top_set.intersection(emotion_words)))
+    emotion_hits = sorted(list(top_set.intersection(emotion_words)))
     if emotion_hits:
         flags.append(
             Flag(
@@ -153,3 +174,129 @@ def detect_flags(text_lc: str, top_tokens: List[str]) -> List[Flag]:
                 examples=emotion_hits[:3],
             )
         )
+
+    vague_hits = _contains_any(text_lc, vague_sources)
+    if vague_hits:
+        flags.append(
+            Flag(
+                name="Vague sources / attribution",
+                severity="low",
+                rationale="Claims attributed to unnamed sources can be harder to verify.",
+                examples=vague_hits[:2],
+            )
+        )
+        
+    viral_hits = _contains_any(text_lc, viral_cta)
+    if viral_hits:
+        flags.append(
+            Flag(
+                name="Virality / urgency prompt",
+                severity="high",
+                rationale="Urgent calls to share or fear of deletion are common in manipulative posts.",
+                examples=viral_hits[:2],
+            )
+        )
+
+    # Helpful context flag (not necessarily "bad")
+    authority_words = {"confirmed", "official", "report", "government", "police", "nhs", "who", "cdc"}
+    authority_hits = sorted(list(top_set.intersection(authority_words)))
+    if authority_hits:
+        flags.append(
+            Flag(
+                name="Authority / official framing (context)",
+                severity="low",
+                rationale="References to official sources can increase perceived credibility; check whether specific sources are cited.",
+                examples=authority_hits[:3],
+            )
+        )
+
+    return flags
+
+# -----------------------------
+# Main explain function
+# -----------------------------
+def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
+    """
+    Returns a JSON-friendly explanation:
+    - prediction + probabilities
+    - top SHAP tokens for predicted class
+    - adaptive flags
+    - a short natural-language summary
+    """
+    text = str(text).strip()
+    if not text:
+        raise ValueError("No text provided to explain_text().")
+
+    probs = predict_proba([text])[0]
+    pred_idx = int(np.argmax(probs))
+    pred_label = LABELS[pred_idx]
+    confidence = float(probs[pred_idx])
+
+    sv = _explainer([text])[0]
+    tokens = list(sv.data)
+    values = np.array(sv.values)  # (tokens, outputs) usually
+
+    contrib = values[:, pred_idx] if values.ndim == 2 else values
+
+    ranked = sorted(
+        [(t, float(v)) for t, v in zip(tokens, contrib) if str(t).strip()],
+        key=lambda x: abs(x[1]),
+        reverse=True,
+    )
+
+    top_contrib = ranked[:top_n]
+    top_tokens = [t for t, _ in top_contrib]
+
+    flags = detect_flags(text, top_tokens)
+
+    # Simple NLG summary (you can expand later)
+    if flags:
+        main_flag = flags[0].name
+        summary = (
+            f"Prediction: {pred_label} (confidence {confidence:.3f}). "
+            f"Key language signal: {main_flag}. "
+            "This reflects learned patterns in the training data, not factual verification."
+        )
+    else:
+        summary = (
+            f"Prediction: {pred_label} (confidence {confidence:.3f}). "
+            "No strong heuristic language flags were triggered. "
+            "This reflects learned patterns in the training data, not factual verification."
+        )
+
+    return {
+        "prediction": {
+            "label": pred_label,
+            "confidence": confidence,
+            "probs": {"FAKE": float(probs[0]), "TRUE": float(probs[1])},
+        },
+        "shap": {
+            "top_tokens": [{"token": t, "impact": v} for t, v in top_contrib],
+        },
+        "flags": [f.__dict__ for f in flags],
+        "summary": summary,
+        "input": {"text": text},
+    }
+
+
+# -----------------------------
+# CLI test
+# -----------------------------
+if __name__ == "__main__":
+    user_text = input("Enter a sentence to explain: ").strip()
+    out = explain_text(user_text, top_n=10)
+
+    print("\n[EXPLANATION]")
+    print("Summary:", out["summary"])
+    print("Prediction:", out["prediction"])
+    print("Top tokens:")
+    for item in out["shap"]["top_tokens"]:
+        print(f"  - {item['token']!r}: {item['impact']:+.4f}")
+
+    if out["flags"]:
+        print("Flags:")
+        for f in out["flags"]:
+            ex = ", ".join(f["examples"]) if f["examples"] else ""
+            print(f"  - {f['name']} ({f['severity']}): {f['rationale']} {ex}")
+    else:
+        print("Flags: none")
