@@ -34,5 +34,6 @@ trainer = Trainer(
 )
 
 trainer.train()
+
 trainer.save_model("artifacts/model")
 print("Model saved to artifacts/model")
