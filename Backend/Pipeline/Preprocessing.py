@@ -90,7 +90,7 @@ def tokenize_and_save(
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        # ✅ Keep only safe columns for Arrow conversion
+        # Keep only safe columns for Arrow conversion
     keep_cols = ["text", "label", "domain", "source"]
     keep_cols = [c for c in keep_cols if c in df.columns]
     df = df[keep_cols].copy()
