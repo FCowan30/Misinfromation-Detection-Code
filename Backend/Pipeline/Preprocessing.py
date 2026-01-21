@@ -1,185 +1,134 @@
-    # import pandas with error handling.
+from __future__ import annotations
+
 try:
     import pandas as pd
 except ImportError as e:
-    raise ImportError(
-        "Pandas is required to run this script (Preproecessing.py)." \
-        "Please install it using 'pip install pandas'."
-) from e 
+    raise ImportError("Missing pandas. Install with: pip install pandas") from e
 
-def Load_training_data():
-    # load dataset
-    # ensure Files exist, are accessible, and not empty.
-    try:
-        df_fake= pd.read_csv("data/fake.csv")
-        df_true = pd.read_csv("data/True.csv")
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            "Dataset files not found. Please ensure 'fake.csv' and 'True.csv' are present in the 'data' directory."
-        ) from e 
-    except pd.errors.EmptyDataError as e:
-        raise ValueError(
-            "One of the dataset files is empty. Please check the files in the 'data' directory."
-        ) from e
-    except Exception as e:
-        raise Exception(
-            f"An error occurred while loading the dataset files: {e}."
-        ) from e
-    
-    #ensure Files are not empty
-    if df_fake.empty:
-        raise ValueError("The fake news dataset is empty.")
-    
-    if df_true.empty:
-        raise ValueError("The true news dataset is empty.")
+from Backend.config import ARTIFACTS_DIR
 
-    print("Dataset loaded successfully.")
+# ✅ Import dataset loaders (adjust names if yours differ)
+from Backend.Datasets.kaggle import load_kaggle
+from Backend.Datasets.fever import load_fever
+from Backend.Datasets.pubhealth import load_pubhealth
+from Backend.Datasets.social_covid import load_social
 
-    return df_fake, df_true
 
-def label_combine_data(df_fake, df_true):
-    # Add labels
-    df_fake["label"] = 0
-    df_true["label"] = 1
+REQUIRED_COLS = ["text", "label", "domain", "source"]
 
-    # Combine datasets
-    df = pd.concat([df_fake, df_true], ignore_index=True)
 
-    # Shuffle the dataset
-    df = df.sample(frac=1).reset_index(drop=True)
+def load_all_datasets(
+    include_kaggle: bool = True,
+    include_fever: bool = True,
+    include_pubhealth: bool = True,
+    include_social: bool = True,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
 
-    print("Data preprocessed successfully.")
-    print("Dataset shape:", df.shape)
+    if include_kaggle:
+        frames.append(load_kaggle())
+    if include_fever:
+        frames.append(load_fever())
+    if include_pubhealth:
+        frames.append(load_pubhealth())
+    if include_social:
+        frames.append(load_social())
+
+    if not frames:
+        raise ValueError("No datasets selected.")
+
+    df = pd.concat(frames, ignore_index=True)
+
+    missing = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Combined dataset missing required columns: {missing}")
+
+    print("[INFO] Combined dataset shape:", df.shape)
+    print("[INFO] Label counts:\n", df["label"].value_counts(dropna=False))
+    print("[INFO] Domain counts:\n", df["domain"].value_counts(dropna=False))
+    print("[INFO] Source counts (top 10):\n", df["source"].value_counts().head(10))
 
     return df
 
-def data_cleaning(df):
-    # Drop unnecessary columns
-    columns_to_drop = ["title", "subject", "date"]
-    df = df.drop(columns=columns_to_drop, errors='ignore')
 
-    # Check for missing values
-    if df.isnull().values.any():
-        df = df.dropna().reset_index(drop=True)
-        print("Missing values found and removed.")
-    else:
-        print("No missing values found.")
-    
-    #check for duplicated rows
-    if df.duplicated().any():
-        df = df.drop_duplicates().reset_index(drop=True)
-        print("Duplicate rows found and removed.")
+def clean_combined(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
 
-    print("Data cleaning completed.")
-    print("Cleaned dataset shape:", df.shape)
+    # Basic clean (final clean happens here, not in loaders)
+    df["text"] = df["text"].astype(str).str.strip()
+    df = df[df["text"].astype(bool)]
 
+    # Drop rows with missing/invalid labels
+    df = df.dropna(subset=["label"])
+    df["label"] = df["label"].astype(int)
+
+    # De-dupe
+    before = len(df)
+    df = df.drop_duplicates(subset=["text"]).reset_index(drop=True)
+    print(f"[INFO] Removed {before - len(df)} duplicate texts")
+
+    print("[INFO] Cleaned dataset shape:", df.shape)
     return df
 
-def build_tokenized_splits(
-    df,
+
+def tokenize_and_save(
+    df: pd.DataFrame,
     model_name: str = "distilbert-base-uncased",
-    text_col: str = "text",
-    label_col: str = "label",
     test_size: float = 0.2,
     seed: int = 42,
     max_length: int = 256,
-):
-    """
-    Converts a pandas DataFrame into Hugging Face train/eval tokenized datasets
-    suitable for Trainer, using dynamic padding via DataCollatorWithPadding.
-    """
-
-    # Dependency checks (clear user-facing errors)
+) -> None:
     try:
         from datasets import Dataset
     except ImportError as e:
-        raise ImportError(
-            "Missing dependency: datasets\n"
-            "Install it with: pip install datasets"
-        ) from e
+        raise ImportError("Missing datasets. Install with: pip install datasets") from e
 
     try:
-        from transformers import AutoTokenizer, DataCollatorWithPadding
+        from transformers import AutoTokenizer
     except ImportError as e:
-        raise ImportError(
-            "Missing dependency: transformers\n"
-            "Install it with: pip install transformers"
-        ) from e
+        raise ImportError("Missing transformers. Install with: pip install transformers") from e
 
-    # Basic input validation (prevents confusing runtime errors)
-    if text_col not in df.columns:
-        raise ValueError(f"DataFrame is missing required text column: '{text_col}'")
-    if label_col not in df.columns:
-        raise ValueError(f"DataFrame is missing required label column: '{label_col}'")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    # Load tokenizer (gives useful message if model can't be fetched)
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-    except OSError as e:
-        raise RuntimeError(
-            f"Failed to load tokenizer '{model_name}'.\n"
-            "Check the model name and your internet connection (or cache)."
-        ) from e
+        # ✅ Keep only safe columns for Arrow conversion
+    keep_cols = ["text", "label", "domain", "source"]
+    keep_cols = [c for c in keep_cols if c in df.columns]
+    df = df[keep_cols].copy()
 
-    def tokenize_function(examples):
-        return tokenizer(
-            examples[text_col],
-            truncation=True,
-            max_length=max_length,
-        )
+    # Ensure types are clean
+    df["text"] = df["text"].astype(str)
+    df["label"] = df["label"].astype(int)
 
-    # Convert to HF Dataset and split
-    hf_dataset = Dataset.from_pandas(df)
-    splits = hf_dataset.train_test_split(test_size=test_size, seed=seed)
+    def tok(examples):
+        return tokenizer(examples["text"], truncation=True, max_length=max_length)
 
-    # Tokenize
-    tokenized = splits.map(tokenize_function, batched=True)
+    hf = Dataset.from_pandas(df)
+    splits = hf.train_test_split(test_size=test_size, seed=seed)
 
-    # Keep only columns Trainer needs
-    keep_cols = {"input_ids", "attention_mask", label_col}
-    remove_cols = [c for c in tokenized["train"].column_names if c not in keep_cols]
+    tokenized = splits.map(tok, batched=True)
+
+    # Keep only Trainer-needed cols
+    keep = {"input_ids", "attention_mask", "label"}
+    remove_cols = [c for c in tokenized["train"].column_names if c not in keep]
     tokenized = tokenized.remove_columns(remove_cols)
 
-    # Rename label column to exactly "label" if needed (Trainer expects "label")
-    if label_col != "label":
-        tokenized = tokenized.rename_column(label_col, "label")
-
-    # Torch format
     tokenized.set_format("torch")
 
-    # Dynamic padding per batch
-    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    out_dir = ARTIFACTS_DIR / "tokenized"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    train_ds = tokenized["train"]
-    eval_ds = tokenized["test"]
+    tokenized["train"].save_to_disk(out_dir / "train")
+    tokenized["test"].save_to_disk(out_dir / "eval")
 
-    print(train_ds[0].keys())
-    print("Tokenized datasets created successfully.")
-
-
-    return train_ds, eval_ds, tokenizer, data_collator
-
-def CLIP_tokenize_text_Image(df):
-    # Placeholder for CLIP tokenization logic
-    
-    return df
-
-from pathlib import Path
-
-out_dir = Path("artifacts/tokenized")
-out_dir.mkdir(parents=True, exist_ok=True)
-
-train_ds.save_to_disk(out_dir / "train")
-eval_ds.save_to_disk(out_dir / "eval")
-
-print("Saved tokenized datasets to:", out_dir)
+    print("[INFO] Saved tokenized train/eval to:", out_dir)
 
 
-
-
-# Testing the function directly from file.
 if __name__ == "__main__":
-    df_Fake, df_True = Load_training_data()
-    df = label_combine_data(df_Fake, df_True)
-    df_cleaned = data_cleaning(df)
-    Cleaned_Tokenised_df = build_tokenized_splits(df_cleaned)
+    df_all = load_all_datasets(
+        include_kaggle=True,
+        include_fever=True,
+        include_pubhealth=True,
+        include_social=True,
+    )
+    df_all = clean_combined(df_all)
+    tokenize_and_save(df_all)
