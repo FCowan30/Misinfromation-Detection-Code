@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # -------------------------------------------------
 # Raw data directory (NOT committed to git)
 # -------------------------------------------------
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = PROJECT_ROOT / "Data"
 
 # -------------------------------------------------
 # Generated artifacts (models, tokenized datasets)
@@ -22,10 +22,10 @@ CLIP_CACHE_DIR = ARTIFACTS_DIR / "clip_cache"
 # -------------------------------------------------
 # Dataset subdirectories (raw)
 # -------------------------------------------------
-KAGGLE_DIR = DATA_DIR / "kaggle"
-FEVER_DIR = DATA_DIR / "fever"
-PUBHEALTH_DIR = DATA_DIR / "pubhealth"
-SOCIAL_DIR = DATA_DIR / "social"
+KAGGLE_DIR = DATA_DIR / "Kaggle"
+FEVER_DIR = DATA_DIR / "Fever"
+PUBHEALTH_DIR = DATA_DIR / "Health"
+SOCIAL_DIR = DATA_DIR / "Social"
 
 # -------------------------------------------------
 # Reproducibility / defaults

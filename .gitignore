@@ -7,24 +7,6 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data (keep folder, don't commit contents)
-data/
-*.csv
-*.tsv
-*.jsonl
-
-# Models / outputs
-models/
-checkpoints/
-runs/
-wandb/
-
-# Hugging Face / caches
-.cache/
-huggingface/
-transformers/
-datasets/
-
 # VS Code
 .vscode/
 
@@ -32,24 +14,18 @@ datasets/
 .DS_Store
 Thumbs.db
 
-# Virtual environment
-.venv/
-
-# Data and models (do not version control)
-data/
+# Artifacts / outputs (do not commit)
+artifacts/
+runs/
+wandb/
+checkpoints/
 models/
 
-# Python cache
-__pycache__/
-*.pyc
+# Hugging Face cache
+.cache/
+huggingface/
+transformers/
+datasets/
 
-# Jupyter
-.ipynb_checkpoints/
-
-# VS Code settings
-.vscode/
-
-# ML artifacts (do not commit)
-artifacts/
-**/__pycache__/
-.venv/
+# Raw data (do not commit)
+data/
