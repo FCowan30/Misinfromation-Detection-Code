@@ -1,11 +1,25 @@
 # Python
 .venv/
-venv/
 __pycache__/
 *.pyc
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Raw data (do not commit contents)
+data/
+*.csv
+*.tsv
+*.jsonl
+
+# ML artifacts (weights, checkpoints, tokenized data)
+artifacts/
+
+# Hugging Face caches
+.cache/
+huggingface/
+datasets/
+transformers/
 
 # VS Code
 .vscode/
@@ -14,18 +28,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Artifacts / outputs (do not commit)
-artifacts/
-runs/
-wandb/
-checkpoints/
-models/
-
-# Hugging Face cache
-.cache/
-huggingface/
-transformers/
-datasets/
-
-# Raw data (do not commit)
-data/
+# Ensure source code is tracked
+!Backend/
+!Backend/**
+!Backend/Models/
+!Backend/Models/**
