@@ -35,3 +35,8 @@ def load_kaggle() -> pd.DataFrame:
     df = df.dropna(subset=["text"])
 
     return df
+
+if __name__ == "__main__":
+    df = load_kaggle()
+    print(df.head())
+    print(df["label"].value_counts())
