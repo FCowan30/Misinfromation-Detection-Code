@@ -7,7 +7,7 @@ except ImportError as e:
 
 from Backend.config import ARTIFACTS_DIR
 
-# ✅ Import dataset loaders (adjust names if yours differ)
+# Dataset loaders
 from Backend.Datasets.kaggle import load_kaggle
 from Backend.Datasets.fever import load_fever
 from Backend.Datasets.pubhealth import load_pubhealth
@@ -54,15 +54,17 @@ def load_all_datasets(
 def clean_combined(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Basic clean (final clean happens here, not in loaders)
+    # Ensure clean types
     df["text"] = df["text"].astype(str).str.strip()
     df = df[df["text"].astype(bool)]
 
-    # Drop rows with missing/invalid labels
+    # Drop rows with missing labels
     df = df.dropna(subset=["label"])
+
+    # If labels come through as strings, normalize here
     df["label"] = df["label"].astype(int)
 
-    # De-dupe
+    # De-dupe by text
     before = len(df)
     df = df.drop_duplicates(subset=["text"]).reset_index(drop=True)
     print(f"[INFO] Removed {before - len(df)} duplicate texts")
@@ -88,21 +90,22 @@ def tokenize_and_save(
     except ImportError as e:
         raise ImportError("Missing transformers. Install with: pip install transformers") from e
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-        # Keep only safe columns for Arrow conversion
+    # ✅ Keep only safe columns BEFORE Arrow conversion
     keep_cols = ["text", "label", "domain", "source"]
-    keep_cols = [c for c in keep_cols if c in df.columns]
     df = df[keep_cols].copy()
 
-    # Ensure types are clean
+    # ✅ Enforce clean types
     df["text"] = df["text"].astype(str)
     df["label"] = df["label"].astype(int)
+    df["domain"] = df["domain"].astype(str)
+    df["source"] = df["source"].astype(str)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     def tok(examples):
         return tokenizer(examples["text"], truncation=True, max_length=max_length)
 
-    hf = Dataset.from_pandas(df)
+    hf = Dataset.from_pandas(df, preserve_index=False)
     splits = hf.train_test_split(test_size=test_size, seed=seed)
 
     tokenized = splits.map(tok, batched=True)
