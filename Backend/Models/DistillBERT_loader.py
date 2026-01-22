@@ -2,7 +2,6 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 from Backend.config import MODEL_DIR
 
-
 def load_distilbert(model_dir: str = MODEL_DIR):
     print(f"[INFO] Loading DistilBERT model from: {model_dir}")
 
