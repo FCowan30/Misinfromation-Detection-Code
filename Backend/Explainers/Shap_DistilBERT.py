@@ -249,7 +249,7 @@ def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
 
     flags = detect_flags(text, top_tokens)
 
-    # Simple NLG summary (you can expand later)
+    # Simple NLG summary
     if flags:
         main_flag = flags[0].name
         summary = (

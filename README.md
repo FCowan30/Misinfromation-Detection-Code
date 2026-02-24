@@ -9,3 +9,14 @@ Returning users:
 1. start Python Enviroment ".\.venv\Scripts\Activate.ps1"
 2. run files for single testing "python Foldername/filename.py"
 3. ensure requirements are updated after installing packages with "pip freeze > requirements.txt"
+
+
+1. run preprocessing "python -m Backend.Pipeline.Preprocessing"
+
+1. Run DistilBERT loader "python -m Backend.Models.DistillBERT_loader"
+2. Run DistilBERT Trainer "python -m Backend.Models.DistillBERT_Train" 
+3. Run DistilBERT pred "python -m Backend.Models.DistillBERT_Predict"
+
+1. Run CLIP loader ""
+2. Run CLIP Trainer "" 
+3. Run CLIP pred ""
