@@ -1,11 +1,6 @@
 from __future__ import annotations
 
 # -----------------------------
-# Standard library
-# -----------------------------
-from typing import Tuple
-
-# -----------------------------
 # Third-party imports (guarded)
 # -----------------------------
 try:
@@ -14,40 +9,76 @@ except ImportError as e:
     raise ImportError("PyTorch is required. Install with: pip install torch") from e
 
 try:
-    from transformers import CLIPModel, CLIPProcessor
+    from PIL import Image
 except ImportError as e:
-    raise ImportError(
-        "transformers is required for CLIP. Install with: pip install transformers"
-    ) from e
+    raise ImportError("Pillow is required. Install with: pip install pillow") from e
 
-from Backend.config import ARTIFACTS_DIR
-
-# You can keep this as OpenAI CLIP, or swap later.
-DEFAULT_CLIP_NAME = "openai/clip-vit-base-patch32"
+from Backend.Models.CLIP_loader import load_clip
 
 
-def load_clip(model_name: str = DEFAULT_CLIP_NAME) -> Tuple[CLIPProcessor, CLIPModel]:
+def clip_similarity(
+    image_path: str,
+    text: str,
+) -> float:
     """
-    Loads CLIP processor + model for text-image similarity.
-    Returns: (processor, model)
+    Returns CLIP similarity score between image and text.
+    Higher = more aligned.
     """
-    print(f"[INFO] Loading CLIP model: {model_name}")
+    processor, model = load_clip()
+    device = next(model.parameters()).device
 
-    processor = CLIPProcessor.from_pretrained(model_name)
-    model = CLIPModel.from_pretrained(model_name)
+    # Load image
+    try:
+        image = Image.open(image_path).convert("RGB")
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Image not found: {image_path}") from e
 
-    # put on device (GPU if available)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
-    model.eval()
+    inputs = processor(text=[text], images=image, return_tensors="pt", padding=True)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    print("[INFO] CLIP loaded successfully.")
-    print(f"[INFO] Device: {device}")
+    with torch.no_grad():
+        outputs = model(**inputs)
 
-    return processor, model
+        # These are embeddings (text/image)
+        image_embeds = outputs.image_embeds
+        text_embeds = outputs.text_embeds
+
+        # cosine similarity
+        image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+        text_embeds = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+
+        sim = (image_embeds * text_embeds).sum(dim=-1).item()
+
+    return float(sim)
+
+
+def predict_clip_match(
+    image_path: str,
+    text: str,
+    threshold: float = 0.25,
+) -> dict:
+    """
+    Simple decision: if similarity >= threshold -> 'MATCH' else 'MISMATCH'
+    """
+    score = clip_similarity(image_path, text)
+    verdict = "MATCH" if score >= threshold else "MISMATCH"
+
+    return {
+        "text": text,
+        "image_path": image_path,
+        "similarity": score,
+        "threshold": threshold,
+        "verdict": verdict,
+    }
 
 
 if __name__ == "__main__":
-    # Simple self-test
-    processor, model = load_clip()
-    print("[TEST] CLIP loader self-test passed.")
+    image_path = input("Enter image path: ").strip()
+    text = input("Enter text to compare: ").strip()
+
+    out = predict_clip_match(image_path, text, threshold=0.25)
+
+    print("\n[CLIP RESULT]")
+    print("Verdict:", out["verdict"])
+    print("Similarity:", round(out["similarity"], 4))
+    print("Threshold:", out["threshold"])
