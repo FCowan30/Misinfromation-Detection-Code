@@ -24,16 +24,14 @@ from Backend.config import ARTIFACTS_DIR
 DEFAULT_CLIP_MODEL = "openai/clip-vit-base-patch32"
 
 def load_clip(model_name: str = DEFAULT_CLIP_MODEL) -> Tuple[CLIPProcessor, CLIPModel]:
-    """
-    Load the CLIP processor and model. for text-image similarities
-    """
+
     print(f"[INFO] loading CLIP model: {model_name}")
 
-    processor = CLIPprocessor.from_pretrained(model_name)
+    processor = CLIPProcessor.from_pretrained(model_name)
     model = CLIPModel.from_pretrained(model_name)
 
     #put on deice (GPU if available)
-    device = "cuda" of torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     model.eval()
 
@@ -41,3 +39,11 @@ def load_clip(model_name: str = DEFAULT_CLIP_MODEL) -> Tuple[CLIPProcessor, CLIP
     print(f"[INFO] Deice: {device}")
 
     return processor, model
+
+if __name__ == "__main__":
+    # Test loading the model
+    try:
+        processor, model = load_clip()
+        print("[TEST] CLIP loaded and ready for inference.")
+    except Exception as e:
+        print(f"[ERROR] Failed to load CLIP: {e}")
