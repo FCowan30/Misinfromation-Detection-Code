@@ -17,6 +17,6 @@ Returning users:
 2. Run DistilBERT Trainer "python -m Backend.Models.DistillBERT_Train" 
 3. Run DistilBERT pred "python -m Backend.Models.DistillBERT_Predict"
 
-1. Run CLIP loader ""
+1. Run CLIP loader "python -m Backend.Models.CLIP_loader"
 2. Run CLIP Trainer "" 
-3. Run CLIP pred ""
+3. Run CLIP pred "python -m Backend.Models.CLIP_predict"

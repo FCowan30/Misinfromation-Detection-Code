@@ -22,7 +22,7 @@ except ImportError as e:
 
 from Backend.config import ARTIFACTS_DIR
 
-# You can keep this as OpenAI CLIP, or swap later.
+# OpenAI CLIP can be swapped later
 DEFAULT_CLIP_NAME = "openai/clip-vit-base-patch32"
 
 
@@ -36,7 +36,7 @@ def load_clip(model_name: str = DEFAULT_CLIP_NAME) -> Tuple[CLIPProcessor, CLIPM
     processor = CLIPProcessor.from_pretrained(model_name)
     model = CLIPModel.from_pretrained(model_name)
 
-    # put on device (GPU if available)
+    # puts on device (GPU if available)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
     model.eval()

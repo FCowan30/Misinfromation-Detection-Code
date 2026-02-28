@@ -27,7 +27,7 @@ def clip_similarity(
     processor, model = load_clip()
     device = next(model.parameters()).device
 
-    # Load image
+    # Load images
     try:
         image = Image.open(image_path).convert("RGB")
     except FileNotFoundError as e:
@@ -39,7 +39,7 @@ def clip_similarity(
     with torch.no_grad():
         outputs = model(**inputs)
 
-        # These are embeddings (text/image)
+        # embeddings (text/image)
         image_embeds = outputs.image_embeds
         text_embeds = outputs.text_embeds
 
