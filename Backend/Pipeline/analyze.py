@@ -4,22 +4,29 @@ from __future__ import annotations
 from typing import Optional, Dict, Any
 import os
 
-# Existing modules you already have
 from Backend.Models.DistillBERT_Predict import predict_text
 
-# If you already have a SHAP/NLG function, import it here.
-# Rename these imports to match your actual file/function names.
+_explainer_import_error = None
 try:
-    from Backend.Explainers.Shap_DistilBERT import explain_text  # <-- adjust if needed
-except Exception:
+    from Backend.Explainers.Shap_DistilBERT import explain_text
+except Exception as e:
     explain_text = None
+    _explainer_import_error = f"{type(e).__name__}: {e}"
 
-# Fusion is only needed when image is provided
+_fusion_import_error = None
 try:
     from Backend.Models.Fusion import fuse_multimodal
-except Exception:
+except Exception as e:
     fuse_multimodal = None
+    _fusion_import_error = f"{type(e).__name__}: {e}"
 
+def _get_explanation(text: str) -> Dict[str, Any]:
+    if explain_text is None:
+        return {"error": f"Explainability import failed: {_explainer_import_error}"}
+    try:
+        return explain_text(text, top_n=10)
+    except Exception as e:
+        return {"error": f"SHAP explain failed: {type(e).__name__}: {e}"}
 
 def _safe_path_exists(path: str) -> bool:
     try:
@@ -45,23 +52,21 @@ def analyze_post(text: str, image_path: Optional[str] = None) -> Dict[str, Any]:
 
     # ---- TEXT ONLY ----
     if not image_path:
-        pred = predict_text(text)
+        explanation = _get_explanation(text)
 
-        # Optional SHAP / NLG explanation
-        explanation = None
-        if explain_text is not None:
-            try:
-                explanation = explain_text(text)  # adjust signature if needed
-            except Exception as e:
-                explanation = {"error": f"SHAP explain failed: {e}"}
+    # If SHAP explanation succeeded, it already contains prediction
+        if isinstance(explanation, dict) and "prediction" in explanation:
+            prediction = explanation["prediction"]
+        else:
+            prediction = predict_text(text)
 
         return {
             "mode": "text_only",
             "inputs": {"text": text, "image_path": None},
-            "prediction": pred,
+            "prediction": prediction,
             "explanation": explanation,
         }
-
+    
     # ---- TEXT + IMAGE ----
     if not _safe_path_exists(image_path):
         # If an image was supplied but path is wrong, fallback to text-only (or raise).
@@ -76,21 +81,14 @@ def analyze_post(text: str, image_path: Optional[str] = None) -> Dict[str, Any]:
         }
 
     if fuse_multimodal is None:
-        raise RuntimeError("Fusion module not available. Ensure Backend/Models/Fusion.py exists and imports correctly.")
+        raise RuntimeError(f"Fusion module not available: {_fusion_import_error}")
 
     fused = fuse_multimodal(text, image_path)
-
-    # Optional: if you want SHAP explanation even in multimodal mode, keep it:
-    explanation = None
-    if explain_text is not None:
-        try:
-            explanation = explain_text(text)  # text explanation still valid
-        except Exception as e:
-            explanation = {"error": f"SHAP explain failed: {e}"}
+    explanation = _get_explanation(text)
 
     return {
         "mode": "multimodal",
         "inputs": {"text": text, "image_path": image_path},
-        "fusion": fused,              # includes text_model + clip_model + final decision
-        "explanation": explanation,   # SHAP/NLG for text (later extend to fusion-aware NLG)
+        "fusion": fused,
+        "explanation": explanation,
     }

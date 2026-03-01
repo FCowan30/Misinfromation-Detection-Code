@@ -113,9 +113,9 @@ _explainer = shap.Explainer(predict_proba, _masker, output_names=LABELS)
 @dataclass
 class Flag:
     name: str
-    severity: str # e.g., "low", "medium", "high"
+    severity: str
     rationale: str
-    example: List[str]
+    examples: List[str]
 
 def _contains_any(text_lc: str, phrases: List[str]) -> List[str]:
     return [p for p in phrases if p in text_lc]
