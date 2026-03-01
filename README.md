@@ -20,3 +20,5 @@ Returning users:
 1. Run CLIP loader "python -m Backend.Models.CLIP_loader"
 2. Run CLIP Trainer "" 
 3. Run CLIP pred "python -m Backend.Models.CLIP_predict"
+
+1. Run both "python -m Backend.run"

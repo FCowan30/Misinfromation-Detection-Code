@@ -5,28 +5,14 @@ from typing import Optional, Dict, Any
 import os
 
 from Backend.Models.DistillBERT_Predict import predict_text
+from Backend.Models.Fusion import fuse_multimodal
 
-_explainer_import_error = None
+# SHAP explainer
 try:
     from Backend.Explainers.Shap_DistilBERT import explain_text
-except Exception as e:
+except Exception:
     explain_text = None
-    _explainer_import_error = f"{type(e).__name__}: {e}"
 
-_fusion_import_error = None
-try:
-    from Backend.Models.Fusion import fuse_multimodal
-except Exception as e:
-    fuse_multimodal = None
-    _fusion_import_error = f"{type(e).__name__}: {e}"
-
-def _get_explanation(text: str) -> Dict[str, Any]:
-    if explain_text is None:
-        return {"error": f"Explainability import failed: {_explainer_import_error}"}
-    try:
-        return explain_text(text, top_n=10)
-    except Exception as e:
-        return {"error": f"SHAP explain failed: {type(e).__name__}: {e}"}
 
 def _safe_path_exists(path: str) -> bool:
     try:
@@ -35,28 +21,39 @@ def _safe_path_exists(path: str) -> bool:
         return False
 
 
-def analyze_post(text: str, image_path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Single entry point for your system.
-    - text is required
-    - image_path is optional
-    Returns a JSON-serializable dict.
+def _maybe_explain(text: str, explain: bool, top_n: int = 10) -> Optional[Dict[str, Any]]:
+    """Return SHAP explanation only if explain=True and module is available."""
+    if not explain:
+        return None
+    if explain_text is None:
+        return {"error": "Explainability module not available (shap not installed or import failed)."}
+    try:
+        return explain_text(text, top_n=top_n)
+    except Exception as e:
+        return {"error": f"SHAP explain failed: {type(e).__name__}: {e}"}
 
-    Frontend/API can call this function directly later.
-    """
+
+def analyze_post(
+    text: str,
+    image_path: Optional[str] = None,
+    explain: bool = False,
+    top_n: int = 10,
+) -> Dict[str, Any]:
     if not text or not text.strip():
         raise ValueError("Text input is required.")
 
     text = text.strip()
     image_path = image_path.strip() if image_path else None
 
-    # ---- TEXT ONLY ----
+    # -------------------------
+    # TEXT ONLY MODE
+    # -------------------------
     if not image_path:
-        explanation = _get_explanation(text)
+        explanation = _maybe_explain(text, explain=explain, top_n=top_n)
 
-    # If SHAP explanation succeeded, it already contains prediction
         if isinstance(explanation, dict) and "prediction" in explanation:
             prediction = explanation["prediction"]
+            explanation = {k: v for k, v in explanation.items() if k != "prediction"}
         else:
             prediction = predict_text(text)
 
@@ -66,29 +63,40 @@ def analyze_post(text: str, image_path: Optional[str] = None) -> Dict[str, Any]:
             "prediction": prediction,
             "explanation": explanation,
         }
-    
-    # ---- TEXT + IMAGE ----
+
+    # -------------------------
+    # IMAGE PATH INVALID
+    # -------------------------
     if not _safe_path_exists(image_path):
-        # If an image was supplied but path is wrong, fallback to text-only (or raise).
-        # For now: return a clear error + still provide text prediction.
-        pred = predict_text(text)
+        explanation = _maybe_explain(text, explain=explain, top_n=top_n)
+
+        if isinstance(explanation, dict) and "prediction" in explanation:
+            prediction = explanation["prediction"]
+            explanation = {k: v for k, v in explanation.items() if k != "prediction"}
+        else:
+            prediction = predict_text(text)
+
         return {
             "mode": "text_only_fallback",
             "inputs": {"text": text, "image_path": image_path},
-            "warning": "Image path provided but file does not exist. Fell back to text-only analysis.",
-            "prediction": pred,
-            "explanation": None,
+            "warning": "Image path does not exist. Fell back to text-only analysis.",
+            "prediction": prediction,
+            "explanation": explanation,
         }
 
-    if fuse_multimodal is None:
-        raise RuntimeError(f"Fusion module not available: {_fusion_import_error}")
-
+    # -------------------------
+    # MULTIMODAL MODE
+    # -------------------------
     fused = fuse_multimodal(text, image_path)
-    explanation = _get_explanation(text)
+    explanation = _maybe_explain(text, explain=explain, top_n=top_n)
+
+    if isinstance(explanation, dict) and "prediction" in explanation:
+        explanation = {k: v for k, v in explanation.items() if k != "prediction"}
 
     return {
         "mode": "multimodal",
         "inputs": {"text": text, "image_path": image_path},
+        "prediction": fused.get("final"),   # recommended for frontend consistency
         "fusion": fused,
         "explanation": explanation,
     }
