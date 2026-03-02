@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Misinformation Detection</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 950px; margin: 40px auto; padding: 0 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display:block; font-weight:600; margin: 10px 0 6px; }
+    textarea { width:100%; min-height:140px; padding:10px; }
+    .row { display:flex; gap:12px; align-items:center; margin-top:12px; }
+    .btn { padding: 10px 14px; border:0; border-radius:10px; cursor:pointer; background:#1f6feb; color:#fff; }
+    .pill { display:inline-block; padding: 4px 10px; border-radius:999px; border:1px solid #ddd; font-weight:700; }
+    .pill-true { background:#e8fff0; border-color:#bde7c9; }
+    .pill-fake { background:#ffecec; border-color:#f3b2b2; }
+    .muted { color:#666; }
+    pre { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:12px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:8px; border-bottom:1px solid #eee; }
+  </style>
+</head>
+<body>
+
+  <h1>Misinformation Detection</h1>
+  <p class="muted">Enter text, optionally upload an image, and run the analysis.</p>
+
+  <div class="card">
+    <form action="/analyze" method="POST" enctype="multipart/form-data">
+      <label>Text (required)</label>
+      <textarea name="text" required placeholder="Enter claim/text...">{{form_text}}</textarea>
+
+      <label>Image (optional)</label>
+      <input type="file" name="image" accept="image/*"/>
+
+      <div class="row">
+        <label style="display:flex; gap:8px; align-items:center; margin:0;">
+          <input type="checkbox" name="explain" value="1" {{#form_explain}}checked{{/form_explain}}>
+          Explain (SHAP + summary)
+        </label>
+        <button class="btn" type="submit">Analyze</button>
+      </div>
+    </form>
+  </div>
+
+  {{#has_result}}
+  <div class="card">
+    <h2>Result</h2>
+
+    <p>
+      <span class="pill {{#is_true}}pill-true{{/is_true}}{{#is_fake}}pill-fake{{/is_fake}}">
+        {{result_label}}
+      </span>
+      <span class="muted">Confidence: {{result_confidence}}</span>
+      <span class="muted">Mode: {{mode}}</span>
+    </p>
+
+    {{#is_multimodal}}
+      <h3>Multimodal signals</h3>
+      <table>
+        <tr><th>Driver</th><td>{{driver}}</td></tr>
+        <tr><th>Text contribution</th><td>{{text_contrib}}</td></tr>
+        <tr><th>Image mismatch contribution</th><td>{{img_contrib}}</td></tr>
+        <tr><th>CLIP similarity (0–1)</th><td>{{clip_sim01}}</td></tr>
+        <tr><th>Mismatch probability</th><td>{{clip_mismatch}}</td></tr>
+      </table>
+    {{/is_multimodal}}
+
+    {{#has_explanation}}
+      <h3>Explanation</h3>
+      <p>{{explain_summary}}</p>
+
+      {{#has_flags}}
+        <h4>Flags</h4>
+        <ul>
+          {{#flags}}
+            <li><strong>{{name}}</strong> ({{severity}}) — {{rationale}}</li>
+          {{/flags}}
+        </ul>
+      {{/has_flags}}
+
+      <h4>Top SHAP tokens</h4>
+      <table>
+        <tr><th>Token</th><th>Impact</th></tr>
+        {{#shap_tokens}}
+          <tr><td>{{token}}</td><td>{{impact}}</td></tr>
+        {{/shap_tokens}}
+      </table>
+    {{/has_explanation}}
+
+    <details style="margin-top:12px;">
+      <summary>Raw JSON</summary>
+      <pre>{{raw_json}}</pre>
+    </details>
+  </div>
+  {{/has_result}}
+
+</body>
+</html>
