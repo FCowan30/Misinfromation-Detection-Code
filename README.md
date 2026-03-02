@@ -22,3 +22,5 @@ Returning users:
 3. Run CLIP pred "python -m Backend.Models.CLIP_predict"
 
 1. Run both "python -m Backend.run"
+2. run dashboard terminal 2 "cd FrontEnd
+npm start"

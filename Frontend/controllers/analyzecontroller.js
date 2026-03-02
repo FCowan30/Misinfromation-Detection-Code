@@ -1,100 +1,114 @@
 const path = require("path");
 const { spawn } = require("child_process");
-const { stdout } = require("process");
 
-function extractJsonFromStdout(Stdout) {
-    const first = stdout.indexOf("{");
-    const last = stdout.lastIndexOf("}");
-    if (first !== -1 && last !== -1) return stdout.slice(first, last + 1);
-    return null;
+function safeToString(x) {
+  if (typeof x === "string") return x;
+  if (Buffer.isBuffer(x)) return x.toString("utf8");
+  return String(x);
 }
 
-function renderHome(res, form_test,form_expalin, obj) {
+exports.analyzeWithPython = (req, res) => {
+  const text = (req.body.text || "").trim();
+  const explain = !!req.body.explain;
+
+  if (!text) return res.status(400).send("Text is required.");
+
+  const imagePath = req.file ? req.file.path : null;
+
+  // Project root (one level above FrontEnd)
+  const projectRoot = path.join(__dirname, "..", "..");
+
+  // Build args for the new CLI mode (JSON-only stdout)
+  const args = ["-m", "Backend.run", "--text", text];
+
+  if (imagePath) {
+    args.push("--image", imagePath);
+  }
+
+  if (explain) {
+    args.push("--explain", "--top-n", "10");
+  }
+
+  // Optional: pretty JSON (easier to debug)
+  args.push("--pretty");
+
+  const pythonPath = path.join(projectRoot, ".venv", "Scripts", "python.exe");
+
+  const py = spawn("python", args, {
+    cwd: projectRoot,
+    shell: false // safer than shell:true
+  });
+
+  let stdout = "";
+  let stderr = "";
+
+  py.stdout.on("data", (d) => (stdout += safeToString(d)));
+  py.stderr.on("data", (d) => (stderr += safeToString(d)));
+
+  py.on("close", (code) => {
+    const outStr = stdout.trim();
+
+    if (!outStr) {
+      return res.status(500).send(
+        `Python returned no stdout.\nExit code: ${code}\n\nSTDERR:\n${stderr}`
+      );
+    }
+
+    let obj;
+    try {
+      obj = JSON.parse(outStr);
+    } catch (e) {
+      return res.status(500).send(
+        `Failed to parse JSON from Python.\n\nError: ${e}\n\nSTDOUT:\n${outStr}\n\nSTDERR:\n${stderr}`
+      );
+    }
+
+    // --- Render the home page with results ---
     const mode = obj.mode || "unknown";
     const isMultimodal = mode === "multimodal";
 
     const prediction = obj.prediction || {};
-    const label = prediction.label || "unknown";
+    const label = prediction.label || "UNKNOWN";
     const conf = prediction.confidence ?? null;
 
-    const driver = isMultimodal ? (obj.fusion?.signlas?.driver || "") : "";
-    const textContrib = isMultimodal ? (obj.fusion?.signals?.contributions?.text ?? null) : nulll;
-    const imgcontrib = isMultimodal ? (obj.fusion?.signals?.contributions?.image_mismatch ?? null) : null;
-    const clipSim01 = isMultimodal ? (obj.fusion?.clip_modal?.similarity01 ?? null) : null;
-    const clipMismatch = isMultimodal ? (obj.fusion?.clip_modal?.p_mismatch ?? null) : null;
+    const driver = isMultimodal ? (obj.fusion?.signals?.driver || "") : "";
+    const textContrib = isMultimodal ? (obj.fusion?.signals?.contributions?.text ?? null) : null;
+    const imgContrib = isMultimodal ? (obj.fusion?.signals?.contributions?.image_mismatch ?? null) : null;
+    const clipSim01 = isMultimodal ? (obj.fusion?.clip_model?.similarity_01 ?? null) : null;
+    const clipMismatch = isMultimodal ? (obj.fusion?.clip_model?.p_mismatch ?? null) : null;
 
     const explanation = obj.explanation;
     const hasExplanation = explanation && !explanation.error;
 
     res.render("home", {
-        from_text,
-        form_explain,
-        has_result: true,
+      form_text: text,
+      form_explain: explain,
+      has_result: true,
 
-        mode,
-        result_label: label,
-        result_confidence: conf !== null ? Number(conf).toFixed(3) : "N/A",
-        is_true: label === "true",
-        is_fake: label === "fake",
+      mode,
+      result_label: label,
+      result_confidence: conf !== null ? Number(conf).toFixed(3) : "N/A",
+      is_true: label === "TRUE",
+      is_fake: label === "FAKE",
 
-        isMultimodal: isMultimodal,
-        driver,
-        textContrib: textContrib !== null ? Number(textContrib).toFixed(3) : "",
-        imgContrib: imgContrib !== null ? Number(imgContrib).toFixed(3) : "",
-        clipSim01: clipSim01 !== null ? Number(clipSim01).toFixed(3) : "",
-        clipMismatch: clipMismatch !== null ? Number(clipMismatch).toFixed(3) : "",
+      is_multimodal: isMultimodal,
+      driver,
+      text_contrib: textContrib !== null ? Number(textContrib).toFixed(3) : "",
+      img_contrib: imgContrib !== null ? Number(imgContrib).toFixed(3) : "",
+      clip_sim01: clipSim01 !== null ? Number(clipSim01).toFixed(3) : "",
+      clip_mismatch: clipMismatch !== null ? Number(clipMismatch).toFixed(3) : "",
 
-        hasExplanation: hasExplanation,
-        explain_summery: hasExplaination? explanation.summary : (explanation?.error || ""),
-        has_flags: hasExplanation && Array.isArray(explanation.flags) && explanation.flags.length > 0,
-        shap_tokens: hasExplanation ? (explanation.shap?.top_tokens || []) : [],
+      has_explanation: hasExplanation,
+      explain_summary: hasExplanation ? explanation.summary : (explanation?.error || ""),
+      has_flags: hasExplanation && Array.isArray(explanation.flags) && explanation.flags.length > 0,
+      flags: hasExplanation ? explanation.flags : [],
+      shap_tokens: hasExplanation ? (explanation.shap?.top_tokens || []) : [],
 
-        raw_json: JSON.stringify(obj, null, 2)
+      raw_json: JSON.stringify(obj, null, 2)
     });
-}
-
-exports.analyzeWithPython = (req, res) => {
-    const text = (req.body.text || "").trim();
-    const explain = !!req.body.explain;
-
-    if (!text) return res.status(400).send("this text is required");
-
-    const imagePath = req.file ? req.file.path : "";
-
-    const projectRoot = path.join(__dirname, "..", "..");
-
-    const py = spawn("python", ["-m", "Backend.run"], {
-        cws: projectRoot,
-        shell: true
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    py.stdout.on("data", (d) => (stdout += d.tostring()));
-    py.stderr.on("data", (d) => (stderr += d.toString()));
-    
-    py.on("close", () => {
-        const jsonStr = extractJsonFromStdout(stdout);
-        if (!jsonStr) {
-            return res.status(500).send(
-                `Python did not return JSON.\n\nSTDERR:\n${stderr}\n\nSTDOUT:\n${stdout}`
-            );
-    }
-
-    try {
-      const obj = JSON.parse(jsonStr);
-      renderHome(res, text, explain, obj);
-    } catch (e) {
-      return res.status(500).send(
-        `Failed to parse JSON.\n\n${e}\n\nRAW JSON:\n${jsonStr}\n\nSTDERR:\n${stderr}`
-      );
-    }
   });
 
-    // Feed the interactive prompts in the exact order Backend.run expects:
-  py.stdin.write(text + "\n");
-  py.stdin.write((imagePath || "") + "\n");
-  py.stdin.write((explain ? "y" : "n") + "\n");
-  py.stdin.end();
+  py.on("error", (err) => {
+    res.status(500).send(`Failed to start Python process: ${err}`);
+  });
 };

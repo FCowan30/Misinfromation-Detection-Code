@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 
-const { analyzeWithpython } = require("../controllers/analyzecontroller");
+const { analyzeWithPython } = require("../controllers/analyzeController");
 
 // save uploads in frontend/public/uploads
 const upload = multer({
