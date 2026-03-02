@@ -34,9 +34,11 @@ exports.analyzeWithPython = (req, res) => {
 
   const pythonPath = path.join(projectRoot, ".venv", "Scripts", "python.exe");
 
-  const py = spawn("python", args, {
+  console.log("Using Python:", pythonPath);
+
+  const py = spawn(pythonPath, args, {
     cwd: projectRoot,
-    shell: false // safer than shell:true
+    shell: false
   });
 
   let stdout = "";
