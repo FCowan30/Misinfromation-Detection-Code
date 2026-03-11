@@ -1,4 +1,4 @@
-# Backend/analyze.py
+# Backend/Pipeline/analyze.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any
@@ -7,11 +7,16 @@ import os
 from Backend.Models.DistillBERT_Predict import predict_text
 from Backend.Models.Fusion import fuse_multimodal
 
-# SHAP explainer
+# SHAP + NLG explainers
 try:
     from Backend.Explainers.Shap_DistilBERT import explain_text
 except Exception:
     explain_text = None
+
+try:
+    from Backend.Explainers.NLG_basic import generate_basic_explanation
+except Exception:
+    generate_basic_explanation = None
 
 
 def _safe_path_exists(path: str) -> bool:
@@ -22,15 +27,57 @@ def _safe_path_exists(path: str) -> bool:
 
 
 def _maybe_explain(text: str, explain: bool, top_n: int = 10) -> Optional[Dict[str, Any]]:
-    """Return SHAP explanation only if explain=True and module is available."""
+    """Return raw SHAP explanation only if explain=True and module is available."""
     if not explain:
         return None
     if explain_text is None:
-        return {"error": "Explainability module not available (shap not installed or import failed)."}
+        return {"error": "Explainability module not available (SHAP import failed)."}
     try:
         return explain_text(text, top_n=top_n)
     except Exception as e:
         return {"error": f"SHAP explain failed: {type(e).__name__}: {e}"}
+
+
+def _build_baseline_explanation(
+    text: str,
+    shap_result: Optional[Dict[str, Any]],
+    fusion_result: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Rebuild the same explanation structure the original page expects:
+    {
+        "summary": ...,
+        "shap": {...},
+        "flags": [...],
+        "input": {...}
+    }
+    """
+    if shap_result is None:
+        return None
+
+    if not isinstance(shap_result, dict):
+        return shap_result
+
+    if "error" in shap_result:
+        return shap_result
+
+    if generate_basic_explanation is None:
+        return {
+            "error": "NLG module not available (generate_basic_explanation import failed)."
+        }
+
+    nlg_result = generate_basic_explanation(
+        shap_result=shap_result,
+        gradcam_result=None,   # later replace with Grad-CAM output
+        fusion_result=fusion_result,
+    )
+
+    return {
+        "summary": nlg_result.get("summary", ""),
+        "shap": shap_result.get("shap", {}),
+        "flags": shap_result.get("flags", []),
+        "input": shap_result.get("input", {"text": text}),
+    }
 
 
 def analyze_post(
@@ -49,13 +96,14 @@ def analyze_post(
     # TEXT ONLY MODE
     # -------------------------
     if not image_path:
-        explanation = _maybe_explain(text, explain=explain, top_n=top_n)
+        shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
 
-        if isinstance(explanation, dict) and "prediction" in explanation:
-            prediction = explanation["prediction"]
-            explanation = {k: v for k, v in explanation.items() if k != "prediction"}
+        if isinstance(shap_result, dict) and "prediction" in shap_result:
+            prediction = shap_result["prediction"]
+            explanation = _build_baseline_explanation(text, shap_result)
         else:
             prediction = predict_text(text)
+            explanation = shap_result
 
         return {
             "mode": "text_only",
@@ -68,13 +116,14 @@ def analyze_post(
     # IMAGE PATH INVALID
     # -------------------------
     if not _safe_path_exists(image_path):
-        explanation = _maybe_explain(text, explain=explain, top_n=top_n)
+        shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
 
-        if isinstance(explanation, dict) and "prediction" in explanation:
-            prediction = explanation["prediction"]
-            explanation = {k: v for k, v in explanation.items() if k != "prediction"}
+        if isinstance(shap_result, dict) and "prediction" in shap_result:
+            prediction = shap_result["prediction"]
+            explanation = _build_baseline_explanation(text, shap_result)
         else:
             prediction = predict_text(text)
+            explanation = shap_result
 
         return {
             "mode": "text_only_fallback",
@@ -88,15 +137,18 @@ def analyze_post(
     # MULTIMODAL MODE
     # -------------------------
     fused = fuse_multimodal(text, image_path)
-    explanation = _maybe_explain(text, explain=explain, top_n=top_n)
+    shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
 
-    if isinstance(explanation, dict) and "prediction" in explanation:
-        explanation = {k: v for k, v in explanation.items() if k != "prediction"}
+    explanation = _build_baseline_explanation(
+        text=text,
+        shap_result=shap_result,
+        fusion_result=fused,
+    )
 
     return {
         "mode": "multimodal",
         "inputs": {"text": text, "image_path": image_path},
-        "prediction": fused.get("final"),   # recommended for frontend consistency
+        "prediction": fused.get("final"),
         "fusion": fused,
         "explanation": explanation,
     }
