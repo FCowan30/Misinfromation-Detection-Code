@@ -1,13 +1,9 @@
 from __future__ import annotations
-
 from pathlib import Path
-
 import pandas as pd
-
 from Backend.config import DATA_DIR
 
 SOCIAL_DIR = DATA_DIR / "Social"
-
 
 def guess_text_column(columns) -> str | None:
     candidates = ["text", "content", "article", "body", "tweet", "post", "title"]

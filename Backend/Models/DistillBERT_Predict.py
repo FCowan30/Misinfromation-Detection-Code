@@ -3,8 +3,6 @@ import numpy as np
 import torch
 from scipy.special import softmax
 
-# Adjust the import path to match your exact folder/file casing:
-# If your loader file is Backend/Models/DistillBERT_loader.py
 from Backend.Models.DistillBERT_loader import load_distilbert
 
 LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true

@@ -5,6 +5,8 @@ from __future__ import annotations
 # -----------------------------
 from dataclasses import dataclass
 from typing import Dict, List, Any
+import sys
+import re
 
 # -----------------------------
 # Third-party imports (guarded)
@@ -56,32 +58,45 @@ except ImportError as e:
 
 LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true
 
-#--------------------------------------------
-#Model + tokenizer (loaded once)
-#--------------------------------------------
+# -----------------------------
+# Determinism (helps reduce "samey" explanations)
+# -----------------------------
+np.random.seed(42)
+torch.manual_seed(42)
 
+# --------------------------------------------
+# Model + tokenizer (loaded once)
+# --------------------------------------------
 _tokenizer, _model = load_distilbert()
 
-# shap is more stable on cpu
+# SHAP is more stable on CPU
 _model.to("cpu")
 _model.eval()
 
-import re
+# -----------------------------
+# Small helpers
+# -----------------------------
+def _norm_token(t: str) -> str:
+    """Normalize a token for matching/flags (lowercase, strip, trim punctuation)."""
+    t = str(t).lower().strip()
+    # Remove leading/trailing non-word characters
+    t = re.sub(r"^\W+|\W+$", "", t)
+    return t
 
-LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true
 
 # -----------------------------
 # Prediction function for SHAP
 # -----------------------------
 def predict_proba(texts):
-    #retruns probability for [Fake, True] for a batch of texts.
-    #SHAP may pass strings,Lists or numPy arrays
-
+    """
+    Returns probability for [FAKE, TRUE] for a batch of texts.
+    SHAP may pass strings, lists, or numpy arrays.
+    """
     if isinstance(texts, str):
         texts = [texts]
     if isinstance(texts, np.ndarray):
         texts = texts.tolist()
-    
+
     texts = [str(t) for t in texts]
 
     enc = _tokenizer(
@@ -92,7 +107,7 @@ def predict_proba(texts):
         return_tensors="pt",
     )
 
-    #ensure tensors on same device as model (cpu)
+    # Ensure tensors on same device as model (cpu)
     enc = {k: v.to(next(_model.parameters()).device) for k, v in enc.items()}
 
     with torch.no_grad():
@@ -100,50 +115,65 @@ def predict_proba(texts):
 
     return softmax(logits, axis=1)
 
-# -----------------------------
-# SHAP Explainer Class  
-# -----------------------------
 
+# -----------------------------
+# SHAP Explainer
+# -----------------------------
 _masker = shap.maskers.Text(_tokenizer)
 _explainer = shap.Explainer(predict_proba, _masker, output_names=LABELS)
 
-#------------------------------
-#Simple adaptive "flags layer"
-#------------------------------
+
+# ------------------------------
+# Simple adaptive "flags layer"
+# ------------------------------
 @dataclass
 class Flag:
     name: str
-    severity: str
+    severity: str  # "low", "medium", "high"
     rationale: str
     examples: List[str]
+
 
 def _contains_any(text_lc: str, phrases: List[str]) -> List[str]:
     return [p for p in phrases if p in text_lc]
 
+
 def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
+    """
+    Uses BOTH:
+    - normalized SHAP top tokens (for model-driven signals)
+    - raw lowercased text (for phrase hits)
+    """
     text_lc = text.lower()
-    top_set = set(t.lower() for t in top_tokens)
+    top_set = set(_norm_token(t) for t in top_tokens if _norm_token(t))
 
     conspiracy_phrases = [
-        "deep state", 
-        "false flag", 
-        "new world order", 
-        "hidden truth", 
+        "deep state",
+        "false flag",
+        "new world order",
+        "hidden truth",
         "crisis actor",
         "wake up",
         "cover up",
-        "Covered up"
+        "covered up",  # fixed casing
     ]
-    secrecy_words = {"secret", "exposed", "leaked", "leak", "hidden", "agenda"}
-    certainty_words = {"proof", "proven", "definitely", "undeniable", "guaranteed", "100%"}
+    secrecy_words = {"secret", "exposed", "leaked", "leak", "hidden", "agenda", "coverup"}
+    certainty_words = {"proof", "proven", "definitely", "undeniable", "guaranteed", "100"}
     emotion_words = {"shocking", "disgusting", "evil", "outrage", "terrifying", "scam"}
-    vague_sources = ["experts say", "sources say", "many are saying", "it is said", "people are saying"]
+    vague_sources = [
+        "experts say",
+        "sources say",
+        "many are saying",
+        "it is said",
+        "people are saying",
+    ]
     viral_cta = ["share this", "spread this", "before it's deleted", "they will delete", "repost"]
 
     flags: List[Flag] = []
 
+    # Secrecy / conspiracy framing
     phrase_hits = _contains_any(text_lc, conspiracy_phrases)
-    secrecy_hits = secrecy_words.intersection(top_set)
+    secrecy_hits = sorted(list(secrecy_words.intersection(top_set)))
     if phrase_hits or secrecy_hits:
         flags.append(
             Flag(
@@ -153,7 +183,13 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
                 examples=(phrase_hits[:3] + secrecy_hits[:3]),
             )
         )
+
+    # Overconfident claim style
     certainty_hits = sorted(list(top_set.intersection(certainty_words)))
+    # Also check raw text for "100%" (since tokenization can split it)
+    if "100%" in text or "100 percent" in text_lc:
+        if "100" not in certainty_hits:
+            certainty_hits = ["100"] + certainty_hits
     if certainty_hits:
         flags.append(
             Flag(
@@ -163,7 +199,8 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
                 examples=certainty_hits[:3],
             )
         )
-    
+
+    # Emotionally charged wording
     emotion_hits = sorted(list(top_set.intersection(emotion_words)))
     if emotion_hits:
         flags.append(
@@ -175,6 +212,7 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
+    # Vague sources / attribution
     vague_hits = _contains_any(text_lc, vague_sources)
     if vague_hits:
         flags.append(
@@ -185,7 +223,8 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
                 examples=vague_hits[:2],
             )
         )
-        
+
+    # Virality / urgency prompt
     viral_hits = _contains_any(text_lc, viral_cta)
     if viral_hits:
         flags.append(
@@ -197,7 +236,7 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
-    # Helpful context flag (not necessarily "bad")
+    # Authority / official framing (context)
     authority_words = {"confirmed", "official", "report", "government", "police", "nhs", "who", "cdc"}
     authority_hits = sorted(list(top_set.intersection(authority_words)))
     if authority_hits:
@@ -212,16 +251,16 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
 
     return flags
 
+
 # -----------------------------
 # Main explain function
 # -----------------------------
 def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
     """
     Returns a JSON-friendly explanation:
-    - prediction + probabilities
     - top SHAP tokens for predicted class
     - adaptive flags
-    - a short natural-language summary
+    - a more dynamic natural-language summary that changes with input
     """
     text = str(text).strip()
     if not text:
@@ -232,10 +271,12 @@ def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
     pred_label = LABELS[pred_idx]
     confidence = float(probs[pred_idx])
 
+    # Run SHAP
     sv = _explainer([text])[0]
     tokens = list(sv.data)
-    values = np.array(sv.values)  # (tokens, outputs) usually
+    values = np.array(sv.values)
 
+    # Select contributions for the predicted class
     contrib = values[:, pred_idx] if values.ndim == 2 else values
 
     ranked = sorted(
@@ -249,18 +290,35 @@ def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
 
     flags = detect_flags(text, top_tokens)
 
-    # Simple NLG summary
+    # --- Dynamic NLG summary (changes with tokens + impacts) ---
+    if confidence >= 0.85:
+        conf_desc = "high"
+    elif confidence >= 0.65:
+        conf_desc = "moderate"
+    else:
+        conf_desc = "low"
+
+    top_k = top_contrib[:3]
+    token_bits = []
+    for tok, val in top_k:
+        tok_clean = str(tok).strip()
+        direction = f"towards {pred_label}" if val >= 0 else f"away from {pred_label}"
+        token_bits.append(f"{tok_clean!r} ({val:+.3f}, {direction})")
+    tokens_str = ", ".join(token_bits) if token_bits else "N/A"
+
     if flags:
         main_flag = flags[0].name
         summary = (
-            f"Prediction: {pred_label} (confidence {confidence:.3f}). "
-            f"Key language signal: {main_flag}. "
+            f"Prediction: {pred_label} (confidence {confidence:.3f}, {conf_desc}). "
+            f"Top influential tokens: {tokens_str}. "
+            f"Flag triggered: {main_flag}. "
             "This reflects learned patterns in the training data, not factual verification."
         )
     else:
         summary = (
-            f"Prediction: {pred_label} (confidence {confidence:.3f}). "
-            "No strong heuristic language flags were triggered. "
+            f"Prediction: {pred_label} (confidence {confidence:.3f}, {conf_desc}). "
+            f"Top influential tokens: {tokens_str}. "
+            "No heuristic language flags were triggered. "
             "This reflects learned patterns in the training data, not factual verification."
         )
 

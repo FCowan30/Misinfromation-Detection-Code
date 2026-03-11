@@ -90,11 +90,11 @@ def tokenize_and_save(
     except ImportError as e:
         raise ImportError("Missing transformers. Install with: pip install transformers") from e
 
-    # ✅ Keep only safe columns BEFORE Arrow conversion
+    #  Keep only safe columns BEFORE Arrow conversion
     keep_cols = ["text", "label", "domain", "source"]
     df = df[keep_cols].copy()
 
-    # ✅ Enforce clean types
+    #  Enforce clean types
     df["text"] = df["text"].astype(str)
     df["label"] = df["label"].astype(int)
     df["domain"] = df["domain"].astype(str)
