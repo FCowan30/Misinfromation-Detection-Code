@@ -18,6 +18,11 @@ try:
 except Exception:
     generate_basic_explanation = None
 
+try:
+    from Backend.Explainers.Grad_CAM import generate_gradcam
+except Exception:
+    generate_gradcam = None
+
 
 def _safe_path_exists(path: str) -> bool:
     try:
@@ -38,10 +43,23 @@ def _maybe_explain(text: str, explain: bool, top_n: int = 10) -> Optional[Dict[s
         return {"error": f"SHAP explain failed: {type(e).__name__}: {e}"}
 
 
+def _maybe_gradcam(image_path: str, text: str, explain: bool) -> Optional[Dict[str, Any]]:
+    """Return raw Grad-CAM explanation only if explain=True and module is available."""
+    if not explain:
+        return None
+    if generate_gradcam is None:
+        return {"error": "Grad-CAM module not available (generate_gradcam import failed)."}
+    try:
+        return generate_gradcam(image_path=image_path, text=text)
+    except Exception as e:
+        return {"error": f"Grad-CAM failed: {type(e).__name__}: {e}"}
+
+
 def _build_baseline_explanation(
     text: str,
     shap_result: Optional[Dict[str, Any]],
     fusion_result: Optional[Dict[str, Any]] = None,
+    gradcam_result: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Rebuild the same explanation structure the original page expects:
@@ -49,7 +67,8 @@ def _build_baseline_explanation(
         "summary": ...,
         "shap": {...},
         "flags": [...],
-        "input": {...}
+        "input": {...},
+        "gradcam": {...}   # new optional field
     }
     """
     if shap_result is None:
@@ -68,7 +87,7 @@ def _build_baseline_explanation(
 
     nlg_result = generate_basic_explanation(
         shap_result=shap_result,
-        gradcam_result=None,   # later replace with Grad-CAM output
+        gradcam_result=gradcam_result,
         fusion_result=fusion_result,
     )
 
@@ -77,6 +96,7 @@ def _build_baseline_explanation(
         "shap": shap_result.get("shap", {}),
         "flags": shap_result.get("flags", []),
         "input": shap_result.get("input", {"text": text}),
+        "gradcam": gradcam_result,  # optional, frontend can ignore for now
     }
 
 
@@ -138,11 +158,13 @@ def analyze_post(
     # -------------------------
     fused = fuse_multimodal(text, image_path)
     shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
+    gradcam_result = _maybe_gradcam(image_path=image_path, text=text, explain=explain)
 
     explanation = _build_baseline_explanation(
         text=text,
         shap_result=shap_result,
         fusion_result=fused,
+        gradcam_result=gradcam_result,
     )
 
     return {
