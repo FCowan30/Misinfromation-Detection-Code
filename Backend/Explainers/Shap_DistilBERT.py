@@ -5,7 +5,6 @@ from __future__ import annotations
 # -----------------------------
 from dataclasses import dataclass
 from typing import Dict, List, Any
-import sys
 import re
 
 # -----------------------------
@@ -59,7 +58,7 @@ except ImportError as e:
 LABELS = ["FAKE", "TRUE"]  # 0=fake, 1=true
 
 # -----------------------------
-# Determinism (helps reduce "samey" explanations)
+# Determinism
 # -----------------------------
 np.random.seed(42)
 torch.manual_seed(42)
@@ -73,13 +72,13 @@ _tokenizer, _model = load_distilbert()
 _model.to("cpu")
 _model.eval()
 
+
 # -----------------------------
 # Small helpers
 # -----------------------------
 def _norm_token(t: str) -> str:
     """Normalize a token for matching/flags (lowercase, strip, trim punctuation)."""
     t = str(t).lower().strip()
-    # Remove leading/trailing non-word characters
     t = re.sub(r"^\W+|\W+$", "", t)
     return t
 
@@ -155,7 +154,7 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
         "crisis actor",
         "wake up",
         "cover up",
-        "covered up",  # fixed casing
+        "covered up",
     ]
     secrecy_words = {"secret", "exposed", "leaked", "leak", "hidden", "agenda", "coverup"}
     certainty_words = {"proof", "proven", "definitely", "undeniable", "guaranteed", "100"}
@@ -171,7 +170,6 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
 
     flags: List[Flag] = []
 
-    # Secrecy / conspiracy framing
     phrase_hits = _contains_any(text_lc, conspiracy_phrases)
     secrecy_hits = sorted(list(secrecy_words.intersection(top_set)))
     if phrase_hits or secrecy_hits:
@@ -184,9 +182,7 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
-    # Overconfident claim style
     certainty_hits = sorted(list(top_set.intersection(certainty_words)))
-    # Also check raw text for "100%" (since tokenization can split it)
     if "100%" in text or "100 percent" in text_lc:
         if "100" not in certainty_hits:
             certainty_hits = ["100"] + certainty_hits
@@ -200,7 +196,6 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
-    # Emotionally charged wording
     emotion_hits = sorted(list(top_set.intersection(emotion_words)))
     if emotion_hits:
         flags.append(
@@ -212,7 +207,6 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
-    # Vague sources / attribution
     vague_hits = _contains_any(text_lc, vague_sources)
     if vague_hits:
         flags.append(
@@ -224,7 +218,6 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
-    # Virality / urgency prompt
     viral_hits = _contains_any(text_lc, viral_cta)
     if viral_hits:
         flags.append(
@@ -236,7 +229,6 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
             )
         )
 
-    # Authority / official framing (context)
     authority_words = {"confirmed", "official", "report", "government", "police", "nhs", "who", "cdc"}
     authority_hits = sorted(list(top_set.intersection(authority_words)))
     if authority_hits:
@@ -253,14 +245,15 @@ def detect_flags(text: str, top_tokens: List[str]) -> List[Flag]:
 
 
 # -----------------------------
-# Main explain function
+# Main SHAP explain function
 # -----------------------------
 def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
     """
-    Returns a JSON-friendly explanation:
+    Returns a JSON-friendly raw explanation:
+    - prediction + probabilities
     - top SHAP tokens for predicted class
     - adaptive flags
-    - a more dynamic natural-language summary that changes with input
+    - no natural-language summary (handled by NLG layer)
     """
     text = str(text).strip()
     if not text:
@@ -276,7 +269,6 @@ def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
     tokens = list(sv.data)
     values = np.array(sv.values)
 
-    # Select contributions for the predicted class
     contrib = values[:, pred_idx] if values.ndim == 2 else values
 
     ranked = sorted(
@@ -290,49 +282,19 @@ def explain_text(text: str, top_n: int = 10) -> Dict[str, Any]:
 
     flags = detect_flags(text, top_tokens)
 
-    # --- Dynamic NLG summary (changes with tokens + impacts) ---
-    if confidence >= 0.85:
-        conf_desc = "high"
-    elif confidence >= 0.65:
-        conf_desc = "moderate"
-    else:
-        conf_desc = "low"
-
-    top_k = top_contrib[:3]
-    token_bits = []
-    for tok, val in top_k:
-        tok_clean = str(tok).strip()
-        direction = f"towards {pred_label}" if val >= 0 else f"away from {pred_label}"
-        token_bits.append(f"{tok_clean!r} ({val:+.3f}, {direction})")
-    tokens_str = ", ".join(token_bits) if token_bits else "N/A"
-
-    if flags:
-        main_flag = flags[0].name
-        summary = (
-            f"Prediction: {pred_label} (confidence {confidence:.3f}, {conf_desc}). "
-            f"Top influential tokens: {tokens_str}. "
-            f"Flag triggered: {main_flag}. "
-            "This reflects learned patterns in the training data, not factual verification."
-        )
-    else:
-        summary = (
-            f"Prediction: {pred_label} (confidence {confidence:.3f}, {conf_desc}). "
-            f"Top influential tokens: {tokens_str}. "
-            "No heuristic language flags were triggered. "
-            "This reflects learned patterns in the training data, not factual verification."
-        )
-
     return {
         "prediction": {
             "label": pred_label,
             "confidence": confidence,
-            "probs": {"FAKE": float(probs[0]), "TRUE": float(probs[1])},
+            "probs": {
+                "FAKE": float(probs[0]),
+                "TRUE": float(probs[1]),
+            },
         },
         "shap": {
             "top_tokens": [{"token": t, "impact": v} for t, v in top_contrib],
         },
         "flags": [f.__dict__ for f in flags],
-        "summary": summary,
         "input": {"text": text},
     }
 
@@ -344,8 +306,7 @@ if __name__ == "__main__":
     user_text = input("Enter a sentence to explain: ").strip()
     out = explain_text(user_text, top_n=10)
 
-    print("\n[EXPLANATION]")
-    print("Summary:", out["summary"])
+    print("\n[RAW SHAP EXPLANATION]")
     print("Prediction:", out["prediction"])
     print("Top tokens:")
     for item in out["shap"]["top_tokens"]:
