@@ -17,6 +17,7 @@
     pre { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:12px; }
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:8px; border-bottom:1px solid #eee; }
+    img.gradcam-image { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -85,6 +86,16 @@
           <tr><td>{{token}}</td><td>{{impact}}</td></tr>
         {{/shap_tokens}}
       </table>
+
+      {{#has_gradcam}}
+        <h3>Visual explanation</h3>
+        <p>{{gradcam_summary}}</p>
+        <p class="muted">Activation strength: {{gradcam_strength}}</p>
+
+        {{#has_gradcam_image}}
+          <img class="gradcam-image" src="{{gradcam_path}}" alt="Grad-CAM heatmap">
+        {{/has_gradcam_image}}
+      {{/has_gradcam}}
     {{/has_explanation}}
 
     <details style="margin-top:12px;">

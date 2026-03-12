@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 
 try:
     import numpy as np
@@ -104,15 +104,6 @@ def generate_gradcam(
 
     Since CLIP ViT does not have a final convolutional layer, this computes
     gradient-weighted relevance over the final patch embeddings of the visual transformer.
-
-    Returns:
-        {
-            "heatmap_path": ...,
-            "top_region_summary": ...,
-            "activation_strength": ...,
-            "peak_location": {"row": ..., "col": ...},
-            "grid_shape": {"height": ..., "width": ...}
-        }
     """
     if not image_path or not os.path.exists(image_path):
         raise FileNotFoundError(f"Image path does not exist: {image_path}")
@@ -120,7 +111,16 @@ def generate_gradcam(
     if not text or not str(text).strip():
         raise ValueError("Text input is required for Grad-CAM generation.")
 
-    processor, model, device = load_clip()
+    clip_loaded = load_clip()
+
+    if len(clip_loaded) == 3:
+        processor, model, device = clip_loaded
+    elif len(clip_loaded) == 2:
+        processor, model = clip_loaded
+        device = next(model.parameters()).device
+    else:
+        raise ValueError(f"Unexpected number of values returned by load_clip(): {len(clip_loaded)}")
+
     model.eval()
 
     # Load image
@@ -139,7 +139,6 @@ def generate_gradcam(
     input_ids = inputs["input_ids"].to(device)
     attention_mask = inputs["attention_mask"].to(device)
 
-    # --- Text features ---
     with torch.enable_grad():
         # Text branch
         text_features = model.get_text_features(
@@ -152,16 +151,22 @@ def generate_gradcam(
         vision_outputs = model.vision_model(
             pixel_values=pixel_values,
             output_hidden_states=True,
-            return_dict=True,
         )
 
-        # Last hidden state: [B, num_tokens, hidden_dim]
-        # For ViT patch models: token 0 is CLS, remaining tokens are image patches
-        last_hidden_state = vision_outputs.last_hidden_state
+        # Support both dict-like and tuple-like outputs from different transformers versions
+        if hasattr(vision_outputs, "last_hidden_state"):
+            last_hidden_state = vision_outputs.last_hidden_state
+            pooled = vision_outputs.pooler_output
+        elif isinstance(vision_outputs, (tuple, list)):
+            # Typical order: [last_hidden_state, pooled_output, hidden_states, ...]
+            last_hidden_state = vision_outputs[0]
+            pooled = vision_outputs[1]
+        else:
+            raise RuntimeError("Unexpected output type from CLIP vision model.")
+
         last_hidden_state.retain_grad()
 
-        # Pooler output -> visual projection
-        pooled = vision_outputs.pooler_output
+        # Project vision features
         image_features = model.visual_projection(pooled)
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
 
@@ -171,8 +176,8 @@ def generate_gradcam(
         model.zero_grad()
         similarity.backward()
 
-        grads = last_hidden_state.grad  # [1, tokens, dim]
-        acts = last_hidden_state        # [1, tokens, dim]
+        grads = last_hidden_state.grad   # [1, tokens, dim]
+        acts = last_hidden_state         # [1, tokens, dim]
 
     if grads is None:
         raise RuntimeError("Gradients were not captured for CLIP vision hidden states.")
@@ -184,18 +189,33 @@ def generate_gradcam(
     num_patches = patch_acts.shape[1]
     grid_size = int(np.sqrt(num_patches))
     if grid_size * grid_size != num_patches:
-        raise RuntimeError(
-            f"Could not reshape {num_patches} patch tokens into a square grid."
-        )
+        raise RuntimeError(f"Could not reshape {num_patches} patch tokens into a square grid.")
 
-    # Grad-CAM-style weighting:
-    # average gradients across patches -> channel weights
-    weights = patch_grads.mean(dim=1, keepdim=True)              # [1, 1, dim]
-    cam_tokens = (patch_acts * weights).sum(dim=-1)              # [1, num_patches]
-    cam_tokens = F.relu(cam_tokens)
+    # Grad-CAM-style weighting
+    weights = patch_grads.mean(dim=1, keepdim=True)   # [1, 1, dim]
+    cam_tokens = (patch_acts * weights).sum(dim=-1)   # [1, num_patches]
+
+    # For CLIP ViT, signed relevance can cancel out heavily.
+    # Use absolute magnitude to avoid all-zero maps.
+    cam_tokens = torch.abs(cam_tokens)
 
     cam = cam_tokens[0].detach().cpu().numpy().reshape(grid_size, grid_size)
     cam = _normalize_map(cam)
+
+    if float(cam.max()) == 0.0:
+        # fallback: use gradient magnitude only
+        cam_tokens = patch_grads.abs().mean(dim=-1)   # [1, num_patches]
+        cam = cam_tokens[0].detach().cpu().numpy().reshape(grid_size, grid_size)
+        cam = _normalize_map(cam)
+
+        if float(cam.max()) == 0.0:
+            return {
+                "heatmap_path": None,
+                "top_region_summary": "The visual explanation could not identify a strong image region for this prediction.",
+                "activation_strength": 0.0,
+                "peak_location": {"row": 0, "col": 0},
+                "grid_shape": {"height": int(grid_size), "width": int(grid_size)},
+           }
 
     # Upsample to original image size
     cam_t = torch.tensor(cam, dtype=torch.float32).unsqueeze(0).unsqueeze(0)

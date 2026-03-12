@@ -18,7 +18,7 @@ exports.analyzeWithPython = (req, res) => {
   // Project root (one level above FrontEnd)
   const projectRoot = path.join(__dirname, "..", "..");
 
-  // Build args for the new CLI mode (JSON-only stdout)
+  // Build args for CLI mode
   const args = ["-m", "Backend.run", "--text", text];
 
   if (imagePath) {
@@ -29,11 +29,9 @@ exports.analyzeWithPython = (req, res) => {
     args.push("--explain", "--top-n", "10");
   }
 
-  // Optional: pretty JSON (easier to debug)
   args.push("--pretty");
 
   const pythonPath = path.join(projectRoot, ".venv", "Scripts", "python.exe");
-
   console.log("Using Python:", pythonPath);
 
   const py = spawn(pythonPath, args, {
@@ -82,6 +80,30 @@ exports.analyzeWithPython = (req, res) => {
     const explanation = obj.explanation;
     const hasExplanation = explanation && !explanation.error;
 
+    const gradcam = hasExplanation ? explanation.gradcam : null;
+    const gradcamUsable = !!(gradcam && !gradcam.error);
+
+    let gradcamPath = "";
+    let gradcamSummary = "";
+    let gradcamStrength = "";
+    let hasGradcamImage = false;
+
+    if (gradcamUsable) {
+      gradcamSummary = gradcam.top_region_summary || "";
+      gradcamStrength =
+        gradcam.activation_strength !== undefined
+          ? Number(gradcam.activation_strength).toFixed(3)
+          : "";
+
+      if (gradcam.heatmap_path) {
+        gradcamPath =
+          "/" + gradcam.heatmap_path
+            .replace(/^FrontEnd\/public\//, "")
+            .replace(/\\/g, "/");
+        hasGradcamImage = true;
+      }
+    }
+
     res.render("home", {
       form_text: text,
       form_explain: explain,
@@ -105,6 +127,12 @@ exports.analyzeWithPython = (req, res) => {
       has_flags: hasExplanation && Array.isArray(explanation.flags) && explanation.flags.length > 0,
       flags: hasExplanation ? explanation.flags : [],
       shap_tokens: hasExplanation ? (explanation.shap?.top_tokens || []) : [],
+
+      has_gradcam: gradcamUsable,
+      has_gradcam_image: hasGradcamImage,
+      gradcam_path: gradcamPath,
+      gradcam_summary: gradcamSummary,
+      gradcam_strength: gradcamStrength,
 
       raw_json: JSON.stringify(obj, null, 2)
     });

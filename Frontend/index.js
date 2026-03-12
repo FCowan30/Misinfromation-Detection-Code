@@ -5,7 +5,12 @@ const mustacheExpress = require("mustache-express");
 const app = express();
 
 //mustache
-app.engine("mustache", mustacheExpress());
+app.engine(
+  "mustache",
+  mustacheExpress(
+    path.join(__dirname, "views", "partials")
+  )
+);
 app.set("view engine","mustache");
 app.set("views", path.join(__dirname, "views"));
 
