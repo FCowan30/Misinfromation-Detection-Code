@@ -3,10 +3,105 @@
 <head>
   <meta charset="utf-8"/>
   <title>Evaluation</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .btn { padding: 10px 14px; border: 0; border-radius: 10px; cursor: pointer; background: #1f6feb; color: white; }
+    .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .metric-box { border: 1px solid #eee; border-radius: 10px; padding: 12px; background: #fafafa; }
+    .muted { color: #666; }
+    img.plot { max-width: 100%; border: 1px solid #ddd; border-radius: 12px; margin-top: 8px; }
+  </style>
 </head>
 <body>
-  {{> navbar}}
-  <h1>Evaluation</h1>
-  <p>This page will contain model retraining, metrics, and graphs.</p>
+
+{{> navbar}}
+
+<h1>Evaluation</h1>
+<p class="muted">Retrain the model and review classification metrics and plots.</p>
+
+<div class="card">
+  <h2>Training Controls</h2>
+  <button id="retrainBtn" class="btn">Retrain Model</button>
+  <p id="statusText" class="muted">
+    Stage: {{status_stage}} | {{status_message}} | Updated: {{status_updated}}
+  </p>
+  {{#status_error}}
+    <p style="color:red;">Error: {{status_error}}</p>
+  {{/status_error}}
+</div>
+
+<div class="card">
+  <h2>Metrics</h2>
+
+  {{#has_metrics}}
+  <div class="metrics-grid">
+    <div class="metric-box"><strong>Accuracy</strong><br>{{accuracy}}</div>
+    <div class="metric-box"><strong>Precision</strong><br>{{precision}}</div>
+    <div class="metric-box"><strong>Recall</strong><br>{{recall}}</div>
+    <div class="metric-box"><strong>F1 Score</strong><br>{{f1}}</div>
+    <div class="metric-box"><strong>ROC AUC</strong><br>{{roc_auc}}</div>
+    <div class="metric-box"><strong>Train / Eval Size</strong><br>{{train_size}} / {{eval_size}}</div>
+  </div>
+
+  <p class="muted" style="margin-top: 12px;">Last updated: {{last_updated}}</p>
+  {{/has_metrics}}
+
+  {{^has_metrics}}
+  <p class="muted">No evaluation metrics available yet. Run retraining first.</p>
+  {{/has_metrics}}
+</div>
+
+<div class="card">
+  <h2>Plots</h2>
+
+  {{#has_metrics}}
+    <h3>Confusion Matrix</h3>
+    <img class="plot" src="{{confusion_matrix_path}}" alt="Confusion Matrix">
+
+    <h3>ROC Curve</h3>
+    <img class="plot" src="{{roc_curve_path}}" alt="ROC Curve">
+  {{/has_metrics}}
+
+  {{^has_metrics}}
+    <p class="muted">Plots will appear here after the first evaluation run.</p>
+  {{/has_metrics}}
+</div>
+
+<script>
+  const retrainBtn = document.getElementById("retrainBtn");
+  const statusText = document.getElementById("statusText");
+
+  retrainBtn.addEventListener("click", async () => {
+    retrainBtn.disabled = true;
+    statusText.textContent = "Starting retraining...";
+
+    const res = await fetch("/evaluation/retrain", { method: "POST" });
+    const data = await res.json();
+
+    if (!data.ok) {
+      statusText.textContent = "Failed to start retraining.";
+      retrainBtn.disabled = false;
+      return;
+    }
+
+    statusText.textContent = "Retraining started...";
+
+    const poll = setInterval(async () => {
+      const statusRes = await fetch("/evaluation/status");
+      const statusData = await statusRes.json();
+
+      const s = statusData.status;
+      statusText.textContent = `Stage: ${s.stage} | ${s.message} | Updated: ${s.updated_at || ""}`;
+
+      if (s.done) {
+        clearInterval(poll);
+        retrainBtn.disabled = false;
+        window.location.reload();
+      }
+    }, 3000);
+  });
+</script>
+
 </body>
 </html>

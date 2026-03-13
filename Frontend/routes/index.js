@@ -5,6 +5,12 @@ const path = require("path");
 
 const { analyzeWithPython } = require("../controllers/analyzeController");
 
+const {renderEvaluationPage, startRetrain, getStatus} = require("../controllers/evaluationController");
+
+router.get("/evaluation", renderEvaluationPage);
+router.post("/evaluation/retrain", startRetrain);
+router.get("/evaluation/status", getStatus);
+
 // Save uploads in FrontEnd/public/uploads
 const upload = multer({
   dest: path.join(__dirname, "..", "public", "uploads"),
