@@ -56,20 +56,44 @@ def clean_combined(df: pd.DataFrame) -> pd.DataFrame:
 
     # Ensure clean types
     df["text"] = df["text"].astype(str).str.strip()
+
+    # Remove empty text
     df = df[df["text"].astype(bool)]
 
     # Drop rows with missing labels
     df = df.dropna(subset=["label"])
 
-    # If labels come through as strings, normalize here
+    # Normalize labels
     df["label"] = df["label"].astype(int)
 
-    # De-dupe by text
+    # -----------------------------
+    # SOCIAL / TWEET DATA CLEANING
+    # -----------------------------
+
+    before_filter = len(df)
+
+    # Remove very short posts
+    df = df[df["text"].str.len() > 20]
+
+    # Remove retweets
+    df = df[~df["text"].str.startswith("RT")]
+
+    # Remove URL-only posts
+    df = df[~df["text"].str.contains("http", case=False)]
+
+    print(f"[INFO] Removed {before_filter - len(df)} low-quality social posts")
+
+    # -----------------------------
+    # REMOVE DUPLICATES
+    # -----------------------------
+
     before = len(df)
     df = df.drop_duplicates(subset=["text"]).reset_index(drop=True)
+
     print(f"[INFO] Removed {before - len(df)} duplicate texts")
 
     print("[INFO] Cleaned dataset shape:", df.shape)
+
     return df
 
 

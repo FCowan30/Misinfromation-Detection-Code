@@ -4,6 +4,25 @@ from transformers import (
     TrainingArguments, Trainer, DataCollatorWithPadding
 )
 
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    preds = logits.argmax(axis=1)
+
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels, preds, average="binary"
+    )
+
+    acc = accuracy_score(labels, preds)
+
+    return {
+        "accuracy": acc,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1
+    }
+
 model_name = "distilbert-base-uncased"
 
 train_ds = load_from_disk("artifacts/tokenized/train")
@@ -19,9 +38,13 @@ training_args = TrainingArguments(
     eval_strategy="epoch",
     save_strategy="epoch",
     logging_strategy="epoch",
-    num_train_epochs=2,
-    per_device_train_batch_size=16,
+    num_train_epochs=3,
+    learning_rate=2e-5,
+    weight_decay=0.01,
+    warmup_ratio=0.1,
+    per_device_train_batch_size=8,
     per_device_eval_batch_size=32,
+    load_best_model_at_end="f1",
     report_to="none",
 )
 
@@ -31,6 +54,7 @@ trainer = Trainer(
     train_dataset=train_ds,
     eval_dataset=eval_ds,
     data_collator=data_collator,
+    compute_metrics=compute_metrics
 )
 
 trainer.train()
