@@ -3,10 +3,122 @@
 <head>
   <meta charset="utf-8"/>
   <title>Home Page 2</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 0 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display:block; font-weight:600; margin: 10px 0 6px; }
+    textarea { width:100%; min-height:140px; padding:10px; }
+    .row { display:flex; gap:12px; align-items:center; margin-top:12px; }
+    .btn { padding: 10px 14px; border:0; border-radius:10px; cursor:pointer; background:#1f6feb; color:#fff; }
+    .pill { display:inline-block; padding: 4px 10px; border-radius:999px; border:1px solid #ddd; font-weight:700; }
+    .pill-true { background:#e8fff0; border-color:#bde7c9; }
+    .pill-fake { background:#ffecec; border-color:#f3b2b2; }
+    .muted { color:#666; }
+    .explain-box { background:#fafafa; border:1px solid #eee; border-radius:10px; padding:12px; margin-bottom:10px; }
+    pre { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:12px; }
+    img.gradcam-image { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; margin-top: 8px; }
+  </style>
 </head>
 <body>
-  {{> navbar}}
-  <h1>Home Page 2</h1>
-  <p>This page will contain the more user-friendly explainability view.</p>
+
+{{> navbar}}
+
+<h1>Home Page 2</h1>
+<p class="muted">This version presents the model output in a more user-friendly and descriptive way.</p>
+
+<div class="card">
+  <form action="/analyze-explain" method="POST" enctype="multipart/form-data">
+    <label>Text (required)</label>
+    <textarea name="text" required placeholder="Enter claim/text...">{{form_text}}</textarea>
+
+    <label>Image (optional)</label>
+    <input type="file" name="image" accept="image/*"/>
+
+    <div class="row">
+      <label style="display:flex; gap:8px; align-items:center; margin:0;">
+        <input type="checkbox" name="explain" value="1" {{#form_explain}}checked{{/form_explain}}>
+        Generate explanation
+      </label>
+      <button class="btn" type="submit">Analyze</button>
+    </div>
+  </form>
+</div>
+
+{{#has_result}}
+<div class="card">
+  <h2>Prediction</h2>
+  <p>
+    <span class="pill {{#is_true}}pill-true{{/is_true}}{{#is_fake}}pill-fake{{/is_fake}}">
+      {{result_label}}
+    </span>
+    <span class="muted">Confidence: {{result_confidence}}</span>
+    <span class="muted">Mode: {{mode}}</span>
+  </p>
+
+  {{#has_detailed}}
+    <div class="explain-box">
+      <strong>Overall explanation</strong>
+      <p>{{detailed_summary}}</p>
+    </div>
+
+    <div class="explain-box">
+      <strong>Prediction confidence</strong>
+      <p>{{prediction_text}}</p>
+    </div>
+
+    <div class="explain-box">
+      <strong>Text explanation</strong>
+      <p>{{token_text}}</p>
+    </div>
+
+    <div class="explain-box">
+      <strong>Language pattern</strong>
+      <p>{{flag_text}}</p>
+    </div>
+
+    {{#similarity_text}}
+    <div class="explain-box">
+      <strong>Image and text similarity</strong>
+      <p>{{similarity_text}}</p>
+    </div>
+    {{/similarity_text}}
+
+    {{#mismatch_text}}
+    <div class="explain-box">
+      <strong>Mismatch interpretation</strong>
+      <p>{{mismatch_text}}</p>
+    </div>
+    {{/mismatch_text}}
+
+    {{#driver_text}}
+    <div class="explain-box">
+      <strong>Main reason for the decision</strong>
+      <p>{{driver_text}}</p>
+    </div>
+    {{/driver_text}}
+
+    {{#visual_text}}
+    <div class="explain-box">
+      <strong>Visual explanation</strong>
+      <p>{{visual_text}}</p>
+
+      {{#has_gradcam_image}}
+        <img class="gradcam-image" src="{{gradcam_path}}" alt="Grad-CAM heatmap">
+      {{/has_gradcam_image}}
+    </div>
+    {{/visual_text}}
+  {{/has_detailed}}
+
+  {{^has_detailed}}
+    <p class="muted">No detailed explanation was available for this example.</p>
+  {{/has_detailed}}
+
+  <details style="margin-top:12px;">
+    <summary>Raw JSON</summary>
+    <pre>{{raw_json}}</pre>
+  </details>
+</div>
+{{/has_result}}
+
 </body>
 </html>

@@ -3,18 +3,20 @@ const router = express.Router();
 const multer = require("multer");
 const path = require("path");
 
-const { analyzeWithPython } = require("../controllers/analyzeController");
+const {
+  analyzeWithPython,
+  analyzeWithPythonDetailed
+} = require("../controllers/analyzeController");
 
-const {renderEvaluationPage, startRetrain, getStatus} = require("../controllers/evaluationController");
+const {
+  renderEvaluationPage,
+  startRetrain,
+  getStatus
+} = require("../controllers/evaluationController");
 
-router.get("/evaluation", renderEvaluationPage);
-router.post("/evaluation/retrain", startRetrain);
-router.get("/evaluation/status", getStatus);
-
-// Save uploads in FrontEnd/public/uploads
 const upload = multer({
   dest: path.join(__dirname, "..", "public", "uploads"),
-  limits: { fileSize: 8 * 1024 * 1024 } // 8MB
+  limits: { fileSize: 8 * 1024 * 1024 }
 });
 
 router.get("/", (req, res) => {
@@ -33,12 +35,12 @@ router.get("/home_explain", (req, res) => {
   });
 });
 
-router.get("/evaluation", (req, res) => {
-  res.render("evaluation", {
-    has_result: false
-  });
-});
+router.get("/evaluation", renderEvaluationPage);
 
 router.post("/analyze", upload.single("image"), analyzeWithPython);
+router.post("/analyze-explain", upload.single("image"), analyzeWithPythonDetailed);
+
+router.post("/evaluation/retrain", startRetrain);
+router.get("/evaluation/status", getStatus);
 
 module.exports = router;
