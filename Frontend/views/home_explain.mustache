@@ -1,124 +1,736 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>Home Page 2</title>
+  <title>Analysis Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
   <style>
-    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 0 16px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    label { display:block; font-weight:600; margin: 10px 0 6px; }
-    textarea { width:100%; min-height:140px; padding:10px; }
-    .row { display:flex; gap:12px; align-items:center; margin-top:12px; }
-    .btn { padding: 10px 14px; border:0; border-radius:10px; cursor:pointer; background:#1f6feb; color:#fff; }
-    .pill { display:inline-block; padding: 4px 10px; border-radius:999px; border:1px solid #ddd; font-weight:700; }
-    .pill-true { background:#e8fff0; border-color:#bde7c9; }
-    .pill-fake { background:#ffecec; border-color:#f3b2b2; }
-    .muted { color:#666; }
-    .explain-box { background:#fafafa; border:1px solid #eee; border-radius:10px; padding:12px; margin-bottom:10px; }
-    pre { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:12px; }
-    img.gradcam-image { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; margin-top: 8px; }
+    :root {
+      --bg: #f4f7fb;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+
+      --blue: #2563eb;
+      --blue-soft: #dbeafe;
+
+      --green: #15803d;
+      --green-soft: #dcfce7;
+
+      --red: #b91c1c;
+      --red-soft: #fee2e2;
+
+      --amber: #b45309;
+      --amber-soft: #fef3c7;
+
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.06), transparent 28%),
+        radial-gradient(circle at top right, rgba(16, 185, 129, 0.05), transparent 25%),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 18px 48px;
+    }
+
+    .page-header {
+      margin-bottom: 22px;
+    }
+
+    .page-title {
+      margin: 0 0 8px;
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .page-subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+      max-width: 760px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid rgba(229, 231, 235, 0.9);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .input-card {
+      padding: 22px;
+      margin-bottom: 22px;
+    }
+
+    .section-title {
+      margin: 0 0 16px;
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+
+    label {
+      display: block;
+      font-weight: 700;
+      margin: 12px 0 8px;
+      font-size: 0.95rem;
+    }
+
+    textarea,
+    input[type="file"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px 14px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 150px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    textarea:focus,
+    input[type="file"]:focus {
+      outline: none;
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .checkbox-wrap {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .checkbox-wrap input {
+      transform: scale(1.1);
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.98rem;
+      padding: 12px 18px;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.22);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(37, 99, 235, 0.28);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    /* Result hero */
+    .result-hero {
+      padding: 24px;
+      margin-bottom: 20px;
+      border-radius: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero-neutral {
+      background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+      border: 1px solid #dbeafe;
+    }
+
+    .hero-true-strong {
+      background: linear-gradient(135deg, #dcfce7 0%, #ecfdf5 100%);
+      border: 1px solid #bbf7d0;
+    }
+
+    .hero-true-moderate {
+      background: linear-gradient(135deg, #ecfccb 0%, #f0fdf4 100%);
+      border: 1px solid #d9f99d;
+    }
+
+    .hero-fake-strong {
+      background: linear-gradient(135deg, #fee2e2 0%, #fff1f2 100%);
+      border: 1px solid #fecaca;
+    }
+
+    .hero-fake-moderate {
+      background: linear-gradient(135deg, #ffedd5 0%, #fff7ed 100%);
+      border: 1px solid #fdba74;
+    }
+
+    .hero-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .hero-left h2 {
+      margin: 0 0 12px;
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .hero-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(4px);
+    }
+
+    .badge-label {
+      background: rgba(255,255,255,0.85);
+      border-color: rgba(255,255,255,0.8);
+    }
+
+    .badge-true {
+      color: #166534;
+      background: rgba(255,255,255,0.88);
+      border-color: #bbf7d0;
+    }
+
+    .badge-fake {
+      color: #991b1b;
+      background: rgba(255,255,255,0.88);
+      border-color: #fecaca;
+    }
+
+    .badge-risk-low {
+      color: #166534;
+      border-color: #bbf7d0;
+    }
+
+    .badge-risk-med {
+      color: #92400e;
+      border-color: #fcd34d;
+    }
+
+    .badge-risk-high {
+      color: #991b1b;
+      border-color: #fecaca;
+    }
+
+    .hero-summary {
+      max-width: 780px;
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.65;
+      color: #1f2937;
+    }
+
+    .hero-score {
+      min-width: 180px;
+      text-align: right;
+    }
+
+    .hero-score .score-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-bottom: 4px;
+    }
+
+    .hero-score .score-value {
+      display: block;
+      font-size: 2.3rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .hero-score .score-sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+
+    /* Score cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .metric-value {
+      font-size: 1.7rem;
+      font-weight: 800;
+      margin-bottom: 10px;
+      letter-spacing: -0.03em;
+    }
+
+    .metric-bar {
+      height: 10px;
+      border-radius: 999px;
+      background: #eef2f7;
+      overflow: hidden;
+    }
+
+    .metric-fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+
+    .fill-blue { background: linear-gradient(90deg, #60a5fa 0%, #2563eb 100%); }
+    .fill-green { background: linear-gradient(90deg, #4ade80 0%, #15803d 100%); }
+    .fill-red { background: linear-gradient(90deg, #f87171 0%, #b91c1c 100%); }
+    .fill-amber { background: linear-gradient(90deg, #fbbf24 0%, #b45309 100%); }
+    .fill-slate { background: linear-gradient(90deg, #cbd5e1 0%, #64748b 100%); }
+
+    .metric-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    /* Content layout */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      padding: 20px;
+    }
+
+    .panel h3 {
+      margin: 0 0 14px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .panel p {
+      margin: 0;
+      line-height: 1.65;
+      color: #1f2937;
+    }
+
+    .panel-list {
+      margin: 0;
+      padding-left: 18px;
+      color: #1f2937;
+    }
+
+    .panel-list li {
+      margin-bottom: 10px;
+      line-height: 1.55;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .panel-positive {
+      background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+      border: 1px solid #dcfce7;
+    }
+
+    .panel-negative {
+      background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+      border: 1px solid #fed7aa;
+    }
+
+    .panel-neutral {
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      border: 1px solid var(--border);
+    }
+
+    .panel-technical {
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      border: 1px solid var(--border);
+    }
+
+    .summary-box {
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+
+    .gradcam-wrap {
+      margin-top: 14px;
+    }
+
+    img.gradcam-image {
+      max-width: 100%;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    details.raw-json {
+      margin-top: 20px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+
+    details.raw-json summary {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    pre {
+      margin-top: 12px;
+      white-space: pre-wrap;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 14px;
+      overflow-x: auto;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1000px) {
+      .metrics-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .content-grid,
+      .two-col {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-score {
+        text-align: left;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page-title {
+        font-size: 1.65rem;
+      }
+
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-score .score-value {
+        font-size: 2rem;
+      }
+    }
   </style>
 </head>
 <body>
 
 {{> navbar}}
 
-<h1>Home Page 2</h1>
-<p class="muted">This version presents the model output in a more user-friendly and descriptive way.</p>
+<div class="page">
+  <header class="page-header">
+    <h1 class="page-title">Explainable Misinformation Analysis</h1>
+    <p class="page-subtitle">
+      Submit a claim and optional image to analyse the prediction, supporting evidence,
+      counter-evidence, model scores, and explanation pathway.
+    </p>
+  </header>
 
-<div class="card">
-  <form action="/analyze-explain" method="POST" enctype="multipart/form-data">
-    <label>Text (required)</label>
-    <textarea name="text" required placeholder="Enter claim/text...">{{form_text}}</textarea>
+  <section class="card input-card">
+    <h2 class="section-title">New Analysis</h2>
 
-    <label>Image (optional)</label>
-    <input type="file" name="image" accept="image/*"/>
+    <form action="/analyze-explain" method="POST" enctype="multipart/form-data">
+      <label for="text">Text claim</label>
+      <textarea id="text" name="text" required placeholder="Enter claim/text...">{{form_text}}</textarea>
 
-    <div class="row">
-      <label style="display:flex; gap:8px; align-items:center; margin:0;">
-        <input type="checkbox" name="explain" value="1" {{#form_explain}}checked{{/form_explain}}>
-        Generate explanation
-      </label>
-      <button class="btn" type="submit">Analyze</button>
+      <label for="image">Image (optional)</label>
+      <input id="image" type="file" name="image" accept="image/*"/>
+
+      <div class="form-row">
+        <label class="checkbox-wrap">
+          <input type="checkbox" name="explain" value="1" {{#form_explain}}checked{{/form_explain}}>
+          Generate detailed explanation
+        </label>
+
+        <button class="btn" type="submit">Run analysis</button>
+      </div>
+    </form>
+  </section>
+
+  {{#has_result}}
+
+  <!-- RESULT HERO -->
+  <section class="card result-hero {{hero_class}}">
+
+    <div class="hero-top">
+      <div class="hero-left">
+        <h2>Prediction result</h2>
+
+        <div class="hero-meta">
+          <span class="badge badge-label {{#is_true}}badge-true{{/is_true}}{{#is_fake}}badge-fake{{/is_fake}}">
+            {{result_label}}
+          </span>
+
+          {{#risk_level}}
+          <span class="badge badge-label
+            {{#risk_low}}badge-risk-low{{/risk_low}}
+            {{#risk_medium}}badge-risk-med{{/risk_medium}}
+            {{#risk_high}}badge-risk-high{{/risk_high}}">
+            {{risk_level}}
+          </span>
+          {{/risk_level}}
+
+          <span class="badge badge-label">Mode: {{mode}}</span>
+        </div>
+
+        {{#detailed_summary}}
+        <p class="hero-summary">{{detailed_summary}}</p>
+        {{/detailed_summary}}
+
+        {{^detailed_summary}}
+        <p class="hero-summary muted">
+          The analysis completed successfully, but no detailed explanation was available for this example.
+        </p>
+        {{/detailed_summary}}
+      </div>
+
+      <div class="hero-score">
+        <span class="score-label">Final confidence</span>
+        <span class="score-value">{{result_confidence}}</span>
+        <div class="score-sub">Model confidence score</div>
+      </div>
     </div>
-  </form>
-</div>
+  </section>
 
-{{#has_result}}
-<div class="card">
-  <h2>Prediction</h2>
-  <p>
-    <span class="pill {{#is_true}}pill-true{{/is_true}}{{#is_fake}}pill-fake{{/is_fake}}">
-      {{result_label}}
-    </span>
-    <span class="muted">Confidence: {{result_confidence}}</span>
-    <span class="muted">Mode: {{mode}}</span>
-  </p>
+  <!-- METRICS -->
+  <section class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Final confidence</div>
+      <div class="metric-value">{{result_confidence}}</div>
+      <div class="metric-bar">
+        <div class="metric-fill fill-blue" style="width: {{final_confidence_pct}}%;"></div>
+      </div>
+      <div class="metric-note">Overall confidence for the final label.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Text confidence</div>
+      <div class="metric-value">{{text_confidence_pct}}</div>
+      <div class="metric-bar">
+        <div class="metric-fill fill-green" style="width: {{text_confidence_pct_value}}%;"></div>
+      </div>
+      <div class="metric-note">Confidence from the text model before fusion.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Similarity</div>
+      <div class="metric-value">{{similarity_pct}}</div>
+      <div class="metric-bar">
+        <div class="metric-fill fill-slate" style="width: {{similarity_pct_value}}%;"></div>
+      </div>
+      <div class="metric-note">How closely the image matches the text claim.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Mismatch</div>
+      <div class="metric-value">{{mismatch_pct}}</div>
+      <div class="metric-bar">
+        <div class="metric-fill fill-red" style="width: {{mismatch_pct_value}}%;"></div>
+      </div>
+      <div class="metric-note">Estimated conflict between the image and the text.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Decision driver</div>
+      <div class="metric-value" style="font-size: 1.15rem; line-height: 1.3;">{{driver_short}}</div>
+      <div class="metric-bar">
+        <div class="metric-fill fill-amber" style="width: 100%;"></div>
+      </div>
+      <div class="metric-note">The main source of evidence influencing the final decision.</div>
+    </div>
+  </section>
 
   {{#has_detailed}}
-    <div class="explain-box">
-      <strong>Overall explanation</strong>
-      <p>{{detailed_summary}}</p>
+  <section class="content-grid">
+
+    <div class="stack">
+      <div class="card panel panel-neutral">
+        <h3>Overall explanation</h3>
+        <p class="summary-box">{{detailed_summary}}</p>
+      </div>
+
+      <div class="two-col">
+        <div class="card panel panel-positive">
+          <h3>Evidence supporting the prediction</h3>
+          <p>{{evidence_for}}</p>
+        </div>
+
+        <div class="card panel panel-negative">
+          <h3>Evidence weakening the prediction</h3>
+          <p>{{evidence_against}}</p>
+        </div>
+      </div>
+
+      <div class="card panel panel-neutral">
+        <h3>Top 3 reasons</h3>
+        <ul class="panel-list">
+          {{#top_reasons}}
+          <li>{{.}}</li>
+          {{/top_reasons}}
+        </ul>
+      </div>
+
+      <div class="card panel panel-neutral">
+        <h3>Decision pathway</h3>
+        <ul class="panel-list">
+          {{#decision_pathway}}
+          <li>{{.}}</li>
+          {{/decision_pathway}}
+        </ul>
+      </div>
+
+      <div class="card panel panel-neutral">
+        <h3>What the confidence score means</h3>
+        <p>{{confidence_meaning_text}}</p>
+      </div>
+
+      <div class="card panel panel-neutral">
+        <h3>Limitations</h3>
+        <p>{{limitations_text}}</p>
+      </div>
     </div>
 
-    <div class="explain-box">
-      <strong>Prediction confidence</strong>
-      <p>{{prediction_text}}</p>
+    <div class="stack">
+      <div class="card panel panel-technical">
+        <h3>Prediction confidence</h3>
+        <p>{{prediction_text}}</p>
+      </div>
+
+      <div class="card panel panel-technical">
+        <h3>Language pattern analysis</h3>
+        <p>{{flag_text}}</p>
+      </div>
+
+      {{#similarity_text}}
+      <div class="card panel panel-technical">
+        <h3>Image and text similarity</h3>
+        <p>{{similarity_text}}</p>
+      </div>
+      {{/similarity_text}}
+
+      {{#mismatch_text}}
+      <div class="card panel panel-technical">
+        <h3>Mismatch interpretation</h3>
+        <p>{{mismatch_text}}</p>
+      </div>
+      {{/mismatch_text}}
+
+      {{#driver_text}}
+      <div class="card panel panel-technical">
+        <h3>Main driver of the decision</h3>
+        <p>{{driver_text}}</p>
+      </div>
+      {{/driver_text}}
+
+      {{#visual_text}}
+      <div class="card panel panel-technical">
+        <h3>Visual explanation</h3>
+        <p>{{visual_text}}</p>
+
+        {{#has_gradcam_image}}
+        <div class="gradcam-wrap">
+          <img class="gradcam-image" src="{{gradcam_path}}" alt="Grad-CAM heatmap">
+        </div>
+        {{/has_gradcam_image}}
+      </div>
+      {{/visual_text}}
+
+      {{#uncertainty_text}}
+      <div class="card panel panel-technical">
+        <h3>Uncertainty note</h3>
+        <p>{{uncertainty_text}}</p>
+      </div>
+      {{/uncertainty_text}}
     </div>
 
-    <div class="explain-box">
-      <strong>Text explanation</strong>
-      <p>{{token_text}}</p>
-    </div>
-
-    <div class="explain-box">
-      <strong>Language pattern</strong>
-      <p>{{flag_text}}</p>
-    </div>
-
-    {{#similarity_text}}
-    <div class="explain-box">
-      <strong>Image and text similarity</strong>
-      <p>{{similarity_text}}</p>
-    </div>
-    {{/similarity_text}}
-
-    {{#mismatch_text}}
-    <div class="explain-box">
-      <strong>Mismatch interpretation</strong>
-      <p>{{mismatch_text}}</p>
-    </div>
-    {{/mismatch_text}}
-
-    {{#driver_text}}
-    <div class="explain-box">
-      <strong>Main reason for the decision</strong>
-      <p>{{driver_text}}</p>
-    </div>
-    {{/driver_text}}
-
-    {{#visual_text}}
-    <div class="explain-box">
-      <strong>Visual explanation</strong>
-      <p>{{visual_text}}</p>
-
-      {{#has_gradcam_image}}
-        <img class="gradcam-image" src="{{gradcam_path}}" alt="Grad-CAM heatmap">
-      {{/has_gradcam_image}}
-    </div>
-    {{/visual_text}}
+  </section>
   {{/has_detailed}}
 
-  {{^has_detailed}}
-    <p class="muted">No detailed explanation was available for this example.</p>
-  {{/has_detailed}}
-
-  <details style="margin-top:12px;">
-    <summary>Raw JSON</summary>
+  <details class="raw-json">
+    <summary>Raw JSON output</summary>
     <pre>{{raw_json}}</pre>
   </details>
+
+  {{/has_result}}
 </div>
-{{/has_result}}
 
 </body>
 </html>

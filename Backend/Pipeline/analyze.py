@@ -6,6 +6,8 @@ import os
 
 from Backend.Models.DistillBERT_Predict import predict_text
 from Backend.Models.Fusion import fuse_multimodal
+from Backend.Models.CLIP_predict import clip_similarity
+from Backend.Models.claim_router import detect_claim_type, decide_descriptive_visual_result
 
 # SHAP + NLG explainers
 try:
@@ -34,6 +36,35 @@ def _safe_path_exists(path: str) -> bool:
         return bool(path) and os.path.exists(path)
     except Exception:
         return False
+
+
+def _clip_raw_to_01(raw_similarity: float) -> float:
+    """
+    Convert CLIP cosine similarity from approx [-1, 1] into [0, 1].
+    """
+    sim_01 = (float(raw_similarity) + 1.0) / 2.0
+    return max(0.0, min(1.0, sim_01))
+
+
+def _run_clip_descriptive_similarity(text: str, image_path: str) -> Dict[str, Any]:
+    """
+    Standalone CLIP route for short descriptive visual claims.
+
+    Notes:
+    - `clip_similarity()` returns a cosine similarity score.
+    - We convert it to [0, 1] for easier interpretation.
+    - `p_mismatch` here is a simple derived proxy: 1 - similarity_01.
+      This is not a separately trained mismatch model.
+    """
+    raw_similarity = clip_similarity(image_path=image_path, text=text)
+    similarity_01 = _clip_raw_to_01(raw_similarity)
+    p_mismatch = 1.0 - similarity_01
+
+    return {
+        "raw_similarity": float(raw_similarity),
+        "similarity_01": round(similarity_01, 4),
+        "p_mismatch": round(p_mismatch, 4),
+    }
 
 
 def _maybe_explain(text: str, explain: bool, top_n: int = 10) -> Optional[Dict[str, Any]]:
@@ -117,16 +148,96 @@ def _build_detailed_explanation(
     return {
         "summary": detailed.get("summary", ""),
         "prediction_text": detailed.get("prediction_text", ""),
-        "token_text": detailed.get("token_text", ""),
+        "risk_level": detailed.get("risk_level", ""),
+        "analysis_route_text": detailed.get("analysis_route_text", ""),
+        "evidence_for": detailed.get("evidence_for", ""),
+        "evidence_against": detailed.get("evidence_against", ""),
+        "top_reasons": detailed.get("top_reasons", []),
+        "decision_pathway": detailed.get("decision_pathway", []),
+        "confidence_meaning_text": detailed.get("confidence_meaning_text", ""),
+        "uncertainty_text": detailed.get("uncertainty_text", ""),
+        "limitations_text": detailed.get("limitations_text", ""),
         "flag_text": detailed.get("flag_text", ""),
         "similarity_text": detailed.get("similarity_text", ""),
         "mismatch_text": detailed.get("mismatch_text", ""),
         "driver_text": detailed.get("driver_text", ""),
         "visual_text": detailed.get("visual_text", ""),
+        "scores": detailed.get("scores", {}),
         "shap": shap_result.get("shap", {}) if shap_result else {},
         "flags": shap_result.get("flags", []) if shap_result else [],
         "input": shap_result.get("input", {"text": text}) if shap_result else {"text": text},
         "gradcam": gradcam_result,
+    }
+
+
+def _build_descriptive_route_outputs(
+    text: str,
+    image_path: str,
+    explain: bool,
+    top_n: int = 10,
+) -> Dict[str, Any]:
+    """
+    Special route for short descriptive visual claims such as:
+    - 'this is a dog'
+    - 'the image shows a pizza'
+    """
+    clip_result = _run_clip_descriptive_similarity(text=text, image_path=image_path)
+
+    prediction = decide_descriptive_visual_result(
+        similarity_01=clip_result.get("similarity_01", 0.0),
+        p_mismatch=clip_result.get("p_mismatch"),
+    )
+
+    # Add extra fields for downstream explanation / UI
+    prediction["raw_similarity"] = clip_result.get("raw_similarity")
+    prediction["text_confidence"] = None
+
+    # Create a fusion-like structure so the existing NLG code can still read it
+    fusion_result = {
+        "clip_model": {
+            "raw_similarity": clip_result.get("raw_similarity"),
+            "similarity_01": clip_result.get("similarity_01"),
+            "p_mismatch": clip_result.get("p_mismatch"),
+        },
+        "signals": {
+            "driver": "image_mismatch" if (clip_result.get("p_mismatch") or 0.0) >= 0.50 else "both"
+        },
+        "analysis_route": prediction.get("analysis_route"),
+        "route_reason": prediction.get("route_reason"),
+        "used_text_model": False,
+        "used_clip_model": True,
+        "final": prediction,
+    }
+
+    gradcam_result = _maybe_gradcam(image_path=image_path, text=text, explain=explain)
+
+    explanation = None
+    explanation_detailed = None
+
+    # No SHAP here because the text model is intentionally skipped
+    shap_result = None
+
+    if explain:
+        explanation_detailed = _build_detailed_explanation(
+            prediction=prediction,
+            text=text,
+            shap_result=shap_result,
+            fusion_result=fusion_result,
+            gradcam_result=gradcam_result,
+        )
+
+    return {
+        "mode": "multimodal_descriptive",
+        "inputs": {"text": text, "image_path": image_path},
+        "prediction": prediction,
+        "fusion": fusion_result,
+        "routing": {
+            "claim_type": "descriptive_visual",
+            "route": "clip_descriptive",
+            "reason": prediction.get("route_reason"),
+        },
+        "explanation": explanation,
+        "explanation_detailed": explanation_detailed,
     }
 
 
@@ -142,12 +253,17 @@ def analyze_post(
     text = text.strip()
     image_path = image_path.strip() if image_path else None
 
+    # ----------------------------------------
     # TEXT ONLY
+    # ----------------------------------------
     if not image_path:
         shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
 
         if isinstance(shap_result, dict) and "prediction" in shap_result:
             prediction = shap_result["prediction"]
+            prediction["analysis_route"] = "text_only"
+            prediction["route_reason"] = "No image was provided, so text-only analysis was used."
+
             explanation = _build_basic_explanation(text, shap_result)
             explanation_detailed = _build_detailed_explanation(
                 prediction=prediction,
@@ -156,6 +272,8 @@ def analyze_post(
             )
         else:
             prediction = predict_text(text)
+            prediction["analysis_route"] = "text_only"
+            prediction["route_reason"] = "No image was provided, so text-only analysis was used."
             explanation = shap_result
             explanation_detailed = None
 
@@ -167,12 +285,17 @@ def analyze_post(
             "explanation_detailed": explanation_detailed,
         }
 
+    # ----------------------------------------
     # INVALID IMAGE PATH
+    # ----------------------------------------
     if not _safe_path_exists(image_path):
         shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
 
         if isinstance(shap_result, dict) and "prediction" in shap_result:
             prediction = shap_result["prediction"]
+            prediction["analysis_route"] = "text_only_fallback"
+            prediction["route_reason"] = "The image path was invalid, so the system fell back to text-only analysis."
+
             explanation = _build_basic_explanation(text, shap_result)
             explanation_detailed = _build_detailed_explanation(
                 prediction=prediction,
@@ -181,6 +304,8 @@ def analyze_post(
             )
         else:
             prediction = predict_text(text)
+            prediction["analysis_route"] = "text_only_fallback"
+            prediction["route_reason"] = "The image path was invalid, so the system fell back to text-only analysis."
             explanation = shap_result
             explanation_detailed = None
 
@@ -193,10 +318,35 @@ def analyze_post(
             "explanation_detailed": explanation_detailed,
         }
 
-    # MULTIMODAL
+    # ----------------------------------------
+    # MULTIMODAL ROUTING
+    # ----------------------------------------
+    routing_info = detect_claim_type(text)
+
+    # Route 1: descriptive visual claim -> skip DistilBERT / skip full fusion
+    if routing_info.get("route") == "clip_descriptive":
+        return _build_descriptive_route_outputs(
+            text=text,
+            image_path=image_path,
+            explain=explain,
+            top_n=top_n,
+        )
+
+    # ----------------------------------------
+    # Route 2: full multimodal claim
+    # ----------------------------------------
     fused = fuse_multimodal(text, image_path)
     shap_result = _maybe_explain(text, explain=explain, top_n=top_n)
     gradcam_result = _maybe_gradcam(image_path=image_path, text=text, explain=explain)
+
+    final_prediction = dict(fused.get("final", {}) or {})
+    final_prediction["analysis_route"] = "full_multimodal"
+    final_prediction["route_reason"] = routing_info.get(
+        "reason",
+        "The statement appeared to be a broader multimodal claim, so full fusion was used."
+    )
+    final_prediction["used_text_model"] = True
+    final_prediction["used_clip_model"] = True
 
     explanation = _build_basic_explanation(
         text=text,
@@ -206,7 +356,7 @@ def analyze_post(
     )
 
     explanation_detailed = _build_detailed_explanation(
-        prediction=fused.get("final", {}),
+        prediction=final_prediction,
         text=text,
         shap_result=shap_result,
         fusion_result=fused,
@@ -216,8 +366,9 @@ def analyze_post(
     return {
         "mode": "multimodal",
         "inputs": {"text": text, "image_path": image_path},
-        "prediction": fused.get("final"),
+        "prediction": final_prediction,
         "fusion": fused,
+        "routing": routing_info,
         "explanation": explanation,
         "explanation_detailed": explanation_detailed,
     }

@@ -45,7 +45,7 @@ def _format_percent(value: Optional[float], decimals: int = 0) -> str:
 
 
 # -----------------------------
-# Confidence / risk banding
+# Confidence / risk
 # -----------------------------
 def get_confidence_band(conf: float) -> str:
     if conf >= 0.90:
@@ -59,9 +59,26 @@ def get_confidence_band(conf: float) -> str:
     return "low"
 
 
-def get_risk_level(pred_label: str, confidence: float, p_mismatch: Optional[float]) -> str:
-    pred = pred_label.upper()
+def get_risk_level(pred_label: str, confidence: float, p_mismatch: Optional[float], analysis_route: Optional[str]) -> str:
+    pred = str(pred_label).upper()
     mismatch = _safe_float(p_mismatch) if p_mismatch is not None else None
+
+    if analysis_route == "clip_descriptive":
+        if pred == "TRUE":
+            if confidence >= 0.80:
+                return "Strong visual support"
+            elif confidence >= 0.60:
+                return "Moderate visual support"
+            return "Weak visual support"
+
+        if pred == "FAKE":
+            if confidence >= 0.80:
+                return "Strong visual conflict"
+            elif confidence >= 0.60:
+                return "Moderate visual conflict"
+            return "Possible visual conflict"
+
+        return "Uncertain visual support"
 
     if pred == "FAKE":
         if confidence >= 0.85:
@@ -70,7 +87,7 @@ def get_risk_level(pred_label: str, confidence: float, p_mismatch: Optional[floa
             return "Moderate misinformation risk"
         return "Possible misinformation risk"
 
-    if pred == "REAL":
+    if pred == "REAL" or pred == "TRUE":
         if mismatch is not None and mismatch >= 0.60:
             return "Mixed evidence"
         elif confidence >= 0.80:
@@ -80,20 +97,30 @@ def get_risk_level(pred_label: str, confidence: float, p_mismatch: Optional[floa
     return "Uncertain result"
 
 
-def describe_confidence(conf: float, pred_label: str) -> Tuple[str, str, str]:
+def describe_confidence(conf: float, pred_label: str, analysis_route: Optional[str]) -> Tuple[str, str, str]:
     band = get_confidence_band(conf)
     conf_pct = _format_percent(conf)
 
-    main = (
-        f"The system predicts that this content is {pred_label} with {band} confidence "
-        f"({conf_pct})."
-    )
-
-    meaning = (
-        f"This {conf_pct} confidence score reflects how strongly the model supported the "
-        f"{pred_label} label compared with the alternative label. It does not mean there is a "
-        f"{conf_pct} real-world probability that the claim is {pred_label}."
-    )
+    if analysis_route == "clip_descriptive":
+        main = (
+            f"The system predicts that this descriptive image claim is {pred_label} "
+            f"with {band} confidence ({conf_pct})."
+        )
+        meaning = (
+            f"This {conf_pct} confidence score reflects how strongly the visual similarity-based route "
+            f"supported the {pred_label} outcome. It does not mean there is a {conf_pct} real-world "
+            f"probability that the statement is objectively true or false in every context."
+        )
+    else:
+        main = (
+            f"The system predicts that this content is {pred_label} with {band} confidence "
+            f"({conf_pct})."
+        )
+        meaning = (
+            f"This {conf_pct} confidence score reflects how strongly the model supported the "
+            f"{pred_label} label compared with the alternative label. It does not mean there is a "
+            f"{conf_pct} real-world probability that the claim is {pred_label}."
+        )
 
     if conf >= 0.90:
         caution = (
@@ -117,6 +144,34 @@ def describe_confidence(conf: float, pred_label: str) -> Tuple[str, str, str]:
         )
 
     return main, meaning, caution
+
+
+# -----------------------------
+# Claim route explanation
+# -----------------------------
+def describe_analysis_route(prediction: Dict[str, Any], fusion_result: Optional[Dict[str, Any]] = None) -> str:
+    analysis_route = prediction.get("analysis_route")
+
+    if analysis_route == "clip_descriptive":
+        return (
+            "This input was treated as a descriptive visual claim. "
+            "Because the statement mainly describes visible image content, "
+            "the system relied on image-text similarity rather than the text classifier."
+        )
+
+    if analysis_route == "full_multimodal":
+        return (
+            "This input was treated as a broader multimodal claim, "
+            "so the system used the full analysis pipeline combining text and image evidence."
+        )
+
+    if analysis_route == "text_only":
+        return "This input was analysed using the text-only route because no image was provided."
+
+    if analysis_route == "text_only_fallback":
+        return "This input was analysed using the text-only fallback route because the image could not be used."
+
+    return "The system selected an analysis route based on the type of input provided."
 
 
 # -----------------------------
@@ -144,15 +199,63 @@ def split_token_impacts(top_tokens: List[Dict[str, Any]]) -> Tuple[List[Dict[str
             negative.append(enriched)
 
     positive.sort(key=lambda x: x["impact"], reverse=True)
-    negative.sort(key=lambda x: x["impact"])  # most negative first
+    negative.sort(key=lambda x: x["impact"])
     return positive, negative
 
 
-def build_evidence_for(top_tokens: List[Dict[str, Any]], flags: List[Dict[str, Any]],
-                       pred_label: str, similarity_01: Optional[float],
-                       p_mismatch: Optional[float], driver: Optional[str]) -> str:
+# -----------------------------
+# Evidence for / against
+# -----------------------------
+def build_evidence_for(
+    top_tokens: List[Dict[str, Any]],
+    flags: List[Dict[str, Any]],
+    pred_label: str,
+    similarity_01: Optional[float],
+    p_mismatch: Optional[float],
+    driver: Optional[str],
+    prediction: Optional[Dict[str, Any]] = None
+) -> str:
+    analysis_route = prediction.get("analysis_route") if prediction else None
+    reasons: List[str] = []
+
+    if analysis_route == "clip_descriptive":
+        if similarity_01 is not None:
+            sim_pct = _format_percent(similarity_01)
+            if _safe_float(similarity_01) >= 0.75:
+                reasons.append(
+                    f"The main supporting evidence was the image-text similarity score of {sim_pct}, "
+                    "which indicates strong alignment between the wording and the image."
+                )
+            elif _safe_float(similarity_01) >= 0.50:
+                reasons.append(
+                    f"The image-text similarity score was {sim_pct}, which indicates moderate visual support."
+                )
+            else:
+                reasons.append(
+                    f"The image-text similarity score was {sim_pct}, which provides only limited visual support."
+                )
+
+        if p_mismatch is not None:
+            mismatch_pct = _format_percent(p_mismatch)
+            if _safe_float(p_mismatch) < 0.35:
+                reasons.append(
+                    f"The derived mismatch score was low at {mismatch_pct}, suggesting little visual conflict."
+                )
+            elif _safe_float(p_mismatch) < 0.50:
+                reasons.append(
+                    f"The derived mismatch score was {mismatch_pct}, suggesting only limited visual conflict."
+                )
+            else:
+                reasons.append(
+                    f"The derived mismatch score was {mismatch_pct}, indicating noticeable visual conflict."
+                )
+
+        if not reasons:
+            return "The system relied mainly on the image-text relationship for this descriptive claim."
+
+        return " ".join(reasons)
+
     positive, _ = split_token_impacts(top_tokens)
-    reasons = []
 
     if positive:
         top_pos = [f"'{x['token']}'" for x in positive[:3]]
@@ -180,7 +283,7 @@ def build_evidence_for(top_tokens: List[Dict[str, Any]], flags: List[Dict[str, A
                 reasons.append(
                     f"The image-text similarity score was only {_format_percent(sim)}, suggesting weak support between the image and the claim."
                 )
-        elif pred_label.upper() == "REAL":
+        elif pred_label.upper() in {"REAL", "TRUE"}:
             if sim >= 0.65 and mismatch < 0.35:
                 reasons.append(
                     f"The image-text relationship appeared broadly consistent, with {_format_percent(sim)} similarity and {_format_percent(mismatch)} mismatch."
@@ -199,10 +302,32 @@ def build_evidence_for(top_tokens: List[Dict[str, Any]], flags: List[Dict[str, A
     return " ".join(reasons)
 
 
-def build_evidence_against(top_tokens: List[Dict[str, Any]], pred_label: str,
-                           similarity_01: Optional[float], p_mismatch: Optional[float]) -> str:
+def build_evidence_against(
+    top_tokens: List[Dict[str, Any]],
+    pred_label: str,
+    similarity_01: Optional[float],
+    p_mismatch: Optional[float],
+    prediction: Optional[Dict[str, Any]] = None
+) -> str:
+    analysis_route = prediction.get("analysis_route") if prediction else None
+    reasons: List[str] = []
+
+    if analysis_route == "clip_descriptive":
+        if similarity_01 is not None and _safe_float(similarity_01) < 0.50:
+            reasons.append(
+                f"The similarity score was only {_format_percent(similarity_01)}, which weakens strong visual support."
+            )
+        if p_mismatch is not None and _safe_float(p_mismatch) >= 0.50:
+            reasons.append(
+                f"The derived mismatch score reached {_format_percent(p_mismatch)}, which suggests conflict between the image and the description."
+            )
+
+        if not reasons:
+            return "The system found little clear counter-evidence against the descriptive visual prediction."
+
+        return " ".join(reasons)
+
     _, negative = split_token_impacts(top_tokens)
-    reasons = []
 
     if negative:
         top_neg = [f"'{x['token']}'" for x in negative[:2]]
@@ -219,7 +344,7 @@ def build_evidence_against(top_tokens: List[Dict[str, Any]], pred_label: str,
                 reasons.append(
                     f"The image still showed {_format_percent(sim)} similarity with the text and only {_format_percent(mismatch)} mismatch, which weakens a strong contradiction-based explanation."
                 )
-        elif pred_label.upper() == "REAL":
+        elif pred_label.upper() in {"REAL", "TRUE"}:
             if mismatch >= 0.50:
                 reasons.append(
                     f"The mismatch score was {_format_percent(mismatch)}, which introduces some concern about whether the image fully supports the claim."
@@ -238,7 +363,13 @@ def build_evidence_against(top_tokens: List[Dict[str, Any]], pred_label: str,
 # -----------------------------
 # Flags
 # -----------------------------
-def describe_flags(flags: List[Dict[str, Any]]) -> str:
+def describe_flags(flags: List[Dict[str, Any]], analysis_route: Optional[str]) -> str:
+    if analysis_route == "clip_descriptive":
+        return (
+            "No text-classifier language pattern analysis was used for this result because the input "
+            "was handled through the descriptive visual route."
+        )
+
     if not flags:
         return "No strong language warning patterns were detected in the text."
 
@@ -265,7 +396,8 @@ def describe_flags(flags: List[Dict[str, Any]]) -> str:
 # -----------------------------
 def describe_similarity_and_mismatch(
     similarity_01: Optional[float],
-    p_mismatch: Optional[float]
+    p_mismatch: Optional[float],
+    analysis_route: Optional[str]
 ) -> Tuple[str, str]:
     if similarity_01 is None and p_mismatch is None:
         return (
@@ -280,43 +412,79 @@ def describe_similarity_and_mismatch(
         sim = _safe_float(similarity_01)
         sim_pct = _format_percent(sim)
 
-        if sim >= 0.75:
-            similarity_text = (
-                f"The image and text show strong similarity ({sim_pct}), suggesting the visual content closely matches the written claim."
-            )
-        elif sim >= 0.50:
-            similarity_text = (
-                f"The image and text show moderate similarity ({sim_pct}), suggesting the image is broadly related to the claim."
-            )
-        elif sim >= 0.25:
-            similarity_text = (
-                f"The image and text show weak similarity ({sim_pct}), suggesting only limited support between the image and the claim."
-            )
+        if analysis_route == "clip_descriptive":
+            if sim >= 0.75:
+                similarity_text = (
+                    f"The descriptive image-text similarity score was strong ({sim_pct}), suggesting that the image closely matches the wording of the statement."
+                )
+            elif sim >= 0.50:
+                similarity_text = (
+                    f"The descriptive image-text similarity score was moderate ({sim_pct}), suggesting that the image is broadly consistent with the statement."
+                )
+            elif sim >= 0.25:
+                similarity_text = (
+                    f"The descriptive image-text similarity score was weak ({sim_pct}), suggesting that the image only loosely supports the statement."
+                )
+            else:
+                similarity_text = (
+                    f"The descriptive image-text similarity score was very low ({sim_pct}), suggesting that the image does not strongly match the statement."
+                )
         else:
-            similarity_text = (
-                f"The image and text show very low similarity ({sim_pct}), suggesting the image may be unrelated or weakly connected to the claim."
-            )
+            if sim >= 0.75:
+                similarity_text = (
+                    f"The image and text show strong similarity ({sim_pct}), suggesting the visual content closely matches the written claim."
+                )
+            elif sim >= 0.50:
+                similarity_text = (
+                    f"The image and text show moderate similarity ({sim_pct}), suggesting the image is broadly related to the claim."
+                )
+            elif sim >= 0.25:
+                similarity_text = (
+                    f"The image and text show weak similarity ({sim_pct}), suggesting only limited support between the image and the claim."
+                )
+            else:
+                similarity_text = (
+                    f"The image and text show very low similarity ({sim_pct}), suggesting the image may be unrelated or weakly connected to the claim."
+                )
 
     if p_mismatch is not None:
         mismatch = _safe_float(p_mismatch)
         mismatch_pct = _format_percent(mismatch)
 
-        if mismatch >= 0.75:
-            mismatch_text = (
-                f"The mismatch score is high ({mismatch_pct}), which suggests strong conflict between the image and the text."
-            )
-        elif mismatch >= 0.50:
-            mismatch_text = (
-                f"The mismatch score is moderate ({mismatch_pct}), suggesting the image may not fully support the text."
-            )
-        elif mismatch >= 0.25:
-            mismatch_text = (
-                f"The mismatch score is fairly low ({mismatch_pct}), so only limited image-text conflict was detected."
-            )
+        if analysis_route == "clip_descriptive":
+            if mismatch >= 0.75:
+                mismatch_text = (
+                    f"The derived mismatch score was high ({mismatch_pct}), which suggests strong conflict between the image and the descriptive statement."
+                )
+            elif mismatch >= 0.50:
+                mismatch_text = (
+                    f"The derived mismatch score was moderate ({mismatch_pct}), suggesting the image may not fully support the descriptive statement."
+                )
+            elif mismatch >= 0.25:
+                mismatch_text = (
+                    f"The derived mismatch score was fairly low ({mismatch_pct}), so only limited visual conflict was detected."
+                )
+            else:
+                mismatch_text = (
+                    f"The derived mismatch score was very low ({mismatch_pct}), indicating little visual conflict."
+                )
         else:
-            mismatch_text = (
-                f"The mismatch score is very low ({mismatch_pct}), indicating little evidence of image-text conflict."
-            )
+            if mismatch >= 0.75:
+                mismatch_text = (
+                    f"The mismatch score is high ({mismatch_pct}), which suggests strong conflict between the image and the text."
+                )
+            elif mismatch >= 0.50:
+                mismatch_text = (
+                    f"The mismatch score is moderate ({mismatch_pct}), suggesting the image may not fully support the text."
+                )
+            elif mismatch >= 0.25:
+                mismatch_text = (
+                    f"The mismatch score is fairly low ({mismatch_pct}), so only limited image-text conflict was detected."
+                )
+            else:
+                mismatch_text = (
+                    f"The mismatch score is very low ({mismatch_pct}), indicating little evidence of image-text conflict."
+                )
 
     return similarity_text, mismatch_text
 
@@ -324,7 +492,12 @@ def describe_similarity_and_mismatch(
 # -----------------------------
 # Driver
 # -----------------------------
-def describe_driver(driver: Optional[str], pred_label: str) -> str:
+def describe_driver(driver: Optional[str], pred_label: str, analysis_route: Optional[str]) -> str:
+    if analysis_route == "clip_descriptive":
+        return (
+            f"The final {pred_label} decision was driven primarily by image-text similarity rather than the text classifier."
+        )
+
     if not driver:
         return "The system could not determine which source of evidence most influenced the final decision."
 
@@ -362,9 +535,21 @@ def build_decision_pathway(
     has_text: bool,
     has_fusion: bool,
     has_visual: bool,
-    driver: Optional[str]
+    driver: Optional[str],
+    analysis_route: Optional[str]
 ) -> List[str]:
     pathway = []
+
+    if analysis_route == "clip_descriptive":
+        pathway.append("Step 1: The system identified the input as a short descriptive visual claim.")
+        pathway.append("Step 2: The text classifier was skipped because the statement mainly described visible image content.")
+        pathway.append("Step 3: The image and text were compared using CLIP similarity to estimate visual support.")
+        if has_visual:
+            pathway.append("Step 4: A visual explanation was generated to show which image regions were most relevant.")
+        else:
+            pathway.append("Step 4: No visual region explanation was available.")
+        pathway.append("Step 5: The final result was produced from the visual consistency route.")
+        return pathway
 
     if has_text:
         pathway.append("Step 1: The text was analysed to identify wording patterns and influential words or phrases.")
@@ -402,9 +587,40 @@ def build_top_reasons(
     flags: List[Dict[str, Any]],
     similarity_01: Optional[float],
     p_mismatch: Optional[float],
-    driver: Optional[str]
+    driver: Optional[str],
+    analysis_route: Optional[str]
 ) -> List[str]:
-    reasons = []
+    reasons: List[str] = []
+
+    if analysis_route == "clip_descriptive":
+        if similarity_01 is not None:
+            sim = _safe_float(similarity_01)
+            if sim >= 0.75:
+                reasons.append(
+                    f"The image-text similarity score was {_format_percent(sim)}, indicating strong visual alignment."
+                )
+            elif sim >= 0.50:
+                reasons.append(
+                    f"The image-text similarity score was {_format_percent(sim)}, indicating moderate visual alignment."
+                )
+            else:
+                reasons.append(
+                    f"The image-text similarity score was {_format_percent(sim)}, indicating weak visual alignment."
+                )
+
+        if p_mismatch is not None:
+            mismatch = _safe_float(p_mismatch)
+            if mismatch >= 0.50:
+                reasons.append(
+                    f"The derived mismatch score was {_format_percent(mismatch)}, indicating notable visual conflict."
+                )
+            else:
+                reasons.append(
+                    f"The derived mismatch score was {_format_percent(mismatch)}, indicating limited visual conflict."
+                )
+
+        reasons.append("The text classifier was intentionally skipped because the statement was treated as a descriptive visual claim.")
+        return reasons[:3]
 
     positive, _ = split_token_impacts(top_tokens)
     if positive:
@@ -451,22 +667,33 @@ def build_top_reasons(
 def build_limitations_statement(
     has_tokens: bool,
     has_fusion: bool,
-    has_visual: bool
+    has_visual: bool,
+    prediction: Optional[Dict[str, Any]] = None
 ) -> str:
+    analysis_route = prediction.get("analysis_route") if prediction else None
+
     parts = [
         "This explanation describes how the model reached its decision, not verified truth."
     ]
 
     parts.append(
-        "A high confidence score means the model preferred one label over the other, but it does not guarantee that the prediction is correct."
+        "A high confidence score means the model preferred one output over the alternatives, but it does not guarantee correctness."
     )
 
-    if not has_tokens:
+    if analysis_route == "clip_descriptive":
+        parts.append(
+            "For descriptive visual claims, the system mainly checks whether the image supports the wording, rather than whether a broader factual claim is true in the real world."
+        )
+        parts.append(
+            "The mismatch value in this route is a derived proxy based on similarity rather than a separate calibrated classifier."
+        )
+
+    if not has_tokens and analysis_route not in {"clip_descriptive"}:
         parts.append("No strong token-level explanation was available, so the text reasoning may be incomplete.")
     if not has_fusion:
-        parts.append("No image-text comparison was available, so the explanation relied less on multimodal evidence.")
+        parts.append("No full image-text fusion output was available, so the explanation relied on fewer multimodal signals.")
     if not has_visual:
-        parts.append("No visual region explanation was available, so the system could not show which parts of the image influenced the result.")
+        parts.append("No visual region explanation was available, so the system could not highlight which image areas influenced the result.")
 
     return " ".join(parts)
 
@@ -482,18 +709,21 @@ def extract_scores(
 
     text_conf = None
     if "text_confidence" in prediction:
-        text_conf = _safe_float(prediction.get("text_confidence"))
+        text_conf = prediction.get("text_confidence")
     elif fusion_result and "text_model" in fusion_result:
-        text_conf = _safe_float(fusion_result["text_model"].get("confidence"))
+        text_conf = fusion_result["text_model"].get("confidence")
 
     similarity = None
     mismatch = None
+    raw_similarity = None
+
     if fusion_result:
         similarity = fusion_result.get("clip_model", {}).get("similarity_01")
         mismatch = fusion_result.get("clip_model", {}).get("p_mismatch")
+        raw_similarity = fusion_result.get("clip_model", {}).get("raw_similarity")
 
     return {
-        "text_confidence_raw": text_conf,
+        "text_confidence_raw": _safe_float(text_conf) if text_conf is not None else None,
         "text_confidence_pct": _to_percent(text_conf) if text_conf is not None else None,
         "similarity_raw": _safe_float(similarity) if similarity is not None else None,
         "similarity_pct": _to_percent(similarity) if similarity is not None else None,
@@ -501,6 +731,7 @@ def extract_scores(
         "mismatch_pct": _to_percent(mismatch) if mismatch is not None else None,
         "final_confidence_raw": final_conf,
         "final_confidence_pct": _to_percent(final_conf),
+        "clip_raw_similarity": _safe_float(raw_similarity) if raw_similarity is not None else None,
     }
 
 
@@ -515,23 +746,36 @@ def generate_detailed_explanation(
 ) -> Dict[str, Any]:
     pred_label = str(prediction.get("label", "UNKNOWN"))
     confidence = _safe_float(prediction.get("confidence", 0.0))
+    analysis_route = prediction.get("analysis_route")
 
-    top_tokens = []
-    flags = []
-    if shap_result:
+    top_tokens: List[Dict[str, Any]] = []
+    flags: List[Dict[str, Any]] = []
+
+    if shap_result and isinstance(shap_result, dict):
         top_tokens = shap_result.get("shap", {}).get("top_tokens", []) or []
         flags = shap_result.get("flags", []) or []
 
     similarity_01 = None
     p_mismatch = None
     driver = None
+
     if fusion_result:
         similarity_01 = fusion_result.get("clip_model", {}).get("similarity_01")
         p_mismatch = fusion_result.get("clip_model", {}).get("p_mismatch")
         driver = fusion_result.get("signals", {}).get("driver")
 
-    prediction_text, confidence_meaning_text, uncertainty_text = describe_confidence(confidence, pred_label)
-    risk_level = get_risk_level(pred_label, confidence, p_mismatch)
+    prediction_text, confidence_meaning_text, uncertainty_text = describe_confidence(
+        confidence, pred_label, analysis_route
+    )
+
+    analysis_route_text = describe_analysis_route(prediction, fusion_result)
+
+    risk_level = get_risk_level(
+        pred_label=pred_label,
+        confidence=confidence,
+        p_mismatch=p_mismatch,
+        analysis_route=analysis_route
+    )
 
     evidence_for_text = build_evidence_for(
         top_tokens=top_tokens,
@@ -539,31 +783,36 @@ def generate_detailed_explanation(
         pred_label=pred_label,
         similarity_01=similarity_01,
         p_mismatch=p_mismatch,
-        driver=driver
+        driver=driver,
+        prediction=prediction
     )
 
     evidence_against_text = build_evidence_against(
         top_tokens=top_tokens,
         pred_label=pred_label,
         similarity_01=similarity_01,
-        p_mismatch=p_mismatch
+        p_mismatch=p_mismatch,
+        prediction=prediction
     )
 
-    flag_text = describe_flags(flags)
+    flag_text = describe_flags(flags, analysis_route)
 
     similarity_text = None
     mismatch_text = None
     if fusion_result:
-        similarity_text, mismatch_text = describe_similarity_and_mismatch(similarity_01, p_mismatch)
+        similarity_text, mismatch_text = describe_similarity_and_mismatch(
+            similarity_01, p_mismatch, analysis_route
+        )
 
-    driver_text = describe_driver(driver, pred_label) if fusion_result else None
+    driver_text = describe_driver(driver, pred_label, analysis_route) if (fusion_result or analysis_route == "clip_descriptive") else None
     visual_text = describe_visual_region(gradcam_result) if gradcam_result else None
 
     decision_pathway = build_decision_pathway(
         has_text=bool(shap_result),
         has_fusion=bool(fusion_result),
         has_visual=bool(gradcam_result),
-        driver=driver
+        driver=driver,
+        analysis_route=analysis_route
     )
 
     top_reasons = build_top_reasons(
@@ -572,16 +821,22 @@ def generate_detailed_explanation(
         flags=flags,
         similarity_01=similarity_01,
         p_mismatch=p_mismatch,
-        driver=driver
+        driver=driver,
+        analysis_route=analysis_route
     )
+
     limitations_text = build_limitations_statement(
         has_tokens=bool(top_tokens),
         has_fusion=bool(fusion_result),
-        has_visual=bool(gradcam_result)
+        has_visual=bool(gradcam_result),
+        prediction=prediction
     )
+
     scores = extract_scores(prediction, fusion_result)
+
     summary_parts = [
         prediction_text,
+        analysis_route_text,
         f"Risk level: {risk_level}.",
         evidence_for_text,
         evidence_against_text,
@@ -594,12 +849,15 @@ def generate_detailed_explanation(
         uncertainty_text,
         limitations_text,
     ]
+
     final_summary = " ".join(part for part in summary_parts if part)
+
     return {
         "summary": final_summary,
 
         "prediction_text": prediction_text,
         "risk_level": risk_level,
+        "analysis_route_text": analysis_route_text,
 
         "evidence_for": evidence_for_text,
         "evidence_against": evidence_against_text,
@@ -623,53 +881,40 @@ def generate_detailed_explanation(
         "flags": flags,
         "gradcam": gradcam_result,
     }
+
 if __name__ == "__main__":
     sample_prediction = {
-        "label": "FAKE",
-        "confidence": 0.7123,
-        "text_confidence": 0.7812
-    }
-    sample_shap = {
-        "shap": {
-            "top_tokens": [
-                {"token": "proof", "impact": 0.22},
-                {"token": "must", "impact": 0.18},
-                {"token": "exposed", "impact": 0.16},
-                {"token": "official", "impact": -0.09},
-                {"token": "reported", "impact": -0.05},
-            ]
-        },
-        "flags": [
-            {
-                "name": "Overconfident claim style",
-                "severity": "medium",
-                "rationale": "Absolute or forceful wording can reduce nuance and may be used to make a claim sound more certain than the available evidence supports."
-            }
-        ]
+        "label": "TRUE",
+        "confidence": 0.91,
+        "analysis_route": "clip_descriptive",
+        "route_reason": "The statement mainly describes visible image content.",
+        "used_text_model": False,
+        "used_clip_model": True,
+        "text_confidence": None,
     }
     sample_fusion = {
         "clip_model": {
-            "similarity_01": 0.6432,
-            "p_mismatch": 0.3578
+            "raw_similarity": 0.82,
+            "similarity_01": 0.91,
+            "p_mismatch": 0.09
         },
         "signals": {
-            "driver": "text"
-        }
+            "driver": "both"
+        },
+        "analysis_route": "clip_descriptive",
+        "route_reason": "The statement mainly describes visible image content.",
+        "used_text_model": False,
+        "used_clip_model": True,
+        "final": sample_prediction,
     }
     sample_gradcam = {
-        "top_region_summary": "The model focused mainly on the central region of the image when comparing visual content with the written claim."
+        "top_region_summary": "The model focused mainly on the central object in the image when checking whether the description matched the visual content."
     }
     out = generate_detailed_explanation(
         prediction=sample_prediction,
-        shap_result=sample_shap,
+        shap_result=None,
         fusion_result=sample_fusion,
         gradcam_result=sample_gradcam,
     )
-    print("SUMMARY:\n")
     print(out["summary"])
-    print("\nTOP REASONS:\n")
-    print(out["top_reasons"])
-    print("\nDECISION PATHWAY:\n")
-    print(out["decision_pathway"])
-    print("\nSCORES:\n")
     print(out["scores"])

@@ -1,111 +1,256 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>Misinformation Detection</title>
+  <title>Home Page 1 - Developer Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
   <style>
-    body { font-family: Arial, sans-serif; max-width: 950px; margin: 40px auto; padding: 0 16px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    label { display:block; font-weight:600; margin: 10px 0 6px; }
-    textarea { width:100%; min-height:140px; padding:10px; }
-    .row { display:flex; gap:12px; align-items:center; margin-top:12px; }
-    .btn { padding: 10px 14px; border:0; border-radius:10px; cursor:pointer; background:#1f6feb; color:#fff; }
-    .pill { display:inline-block; padding: 4px 10px; border-radius:999px; border:1px solid #ddd; font-weight:700; }
-    .pill-true { background:#e8fff0; border-color:#bde7c9; }
-    .pill-fake { background:#ffecec; border-color:#f3b2b2; }
-    .muted { color:#666; }
-    pre { white-space: pre-wrap; background:#f7f7f7; padding:12px; border-radius:12px; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { text-align:left; padding:8px; border-bottom:1px solid #eee; }
-    img.gradcam-image { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; margin-top: 8px; }
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1050px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background: #f6f8fb;
+      color: #111827;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid #dbe1ea;
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    }
+
+    h1, h2, h3 {
+      margin-top: 0;
+    }
+
+    .muted {
+      color: #6b7280;
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin: 10px 0 6px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      padding: 10px;
+      border: 1px solid #cfd8e3;
+      border-radius: 10px;
+      resize: vertical;
+      font: inherit;
+    }
+
+    input[type="file"] {
+      margin-top: 4px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #1f2937;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid #d1d5db;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+
+    .pill-true {
+      background: #e8fff0;
+      border-color: #bde7c9;
+      color: #166534;
+    }
+
+    .pill-fake {
+      background: #ffecec;
+      border-color: #f3b2b2;
+      color: #991b1b;
+    }
+
+    .pill-uncertain {
+      background: #fff7e6;
+      border-color: #f6d28f;
+      color: #92400e;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .metric-label {
+      font-size: 0.9rem;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 1.08rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .technical-note {
+      background: #f3f4f6;
+      border-left: 4px solid #9ca3af;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      background: #111827;
+      color: #f9fafb;
+      padding: 14px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    img.gradcam-image {
+      max-width: 100%;
+      border-radius: 12px;
+      border: 1px solid #d1d5db;
+      margin-top: 8px;
+    }
+
+    @media (max-width: 700px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
 
-  {{> navbar}}
-  
-  <h1>Misinformation Detection</h1>
-  <p class="muted">Enter text, optionally upload an image, and run the analysis.</p>
+{{> navbar}}
 
-  <div class="card">
-    <form action="/analyze" method="POST" enctype="multipart/form-data">
-      <label>Text (required)</label>
-      <textarea name="text" required placeholder="Enter claim/text...">{{form_text}}</textarea>
+<h1>Home Page 1</h1>
+<p class="muted">
+  Developer mode view showing direct model outputs and raw technical signals.
+</p>
 
-      <label>Image (optional)</label>
-      <input type="file" name="image" accept="image/*"/>
+<div class="card">
+  <form action="/analyze" method="POST" enctype="multipart/form-data">
+    <label>Text (required)</label>
+    <textarea name="text" required placeholder="Enter claim/text...">{{form_text}}</textarea>
 
-      <div class="row">
-        <label style="display:flex; gap:8px; align-items:center; margin:0;">
-          <input type="checkbox" name="explain" value="1" {{#form_explain}}checked{{/form_explain}}>
-          Explain (SHAP + summary)
-        </label>
-        <button class="btn" type="submit">Analyze</button>
-      </div>
-    </form>
+    <label>Image (optional)</label>
+    <input type="file" name="image" accept="image/*"/>
+
+    <div class="row">
+      <button class="btn" type="submit">Analyze</button>
+    </div>
+  </form>
+</div>
+
+{{#has_result}}
+<div class="card">
+  <h2>Prediction Output</h2>
+  <p>
+    <span class="pill
+      {{#is_true}}pill-true{{/is_true}}
+      {{#is_fake}}pill-fake{{/is_fake}}
+      {{#is_uncertain}}pill-uncertain{{/is_uncertain}}">
+      {{result_label}}
+    </span>
+    <span class="muted">Raw confidence: {{raw_confidence}}</span>
+  </p>
+
+  <div class="technical-note">
+    <strong>Mode:</strong> {{mode}}<br/>
+    <strong>Analysis route:</strong> {{analysis_route_label}}<br/>
+    <strong>Decision driver:</strong> {{driver_short}}
   </div>
+</div>
 
-  {{#has_result}}
-  <div class="card">
-    <h2>Result</h2>
+<div class="card">
+  <h3>Raw Model Signals</h3>
+  <div class="grid">
+    <div class="metric">
+      <div class="metric-label">Raw confidence</div>
+      <div class="metric-value">{{raw_confidence}}</div>
+    </div>
 
-    <p>
-      <span class="pill {{#is_true}}pill-true{{/is_true}}{{#is_fake}}pill-fake{{/is_fake}}">
-        {{result_label}}
-      </span>
-      <span class="muted">Confidence: {{result_confidence}}</span>
-      <span class="muted">Mode: {{mode}}</span>
-    </p>
+    <div class="metric">
+      <div class="metric-label">Raw CLIP similarity (cosine)</div>
+      <div class="metric-value">{{raw_clip_similarity}}</div>
+    </div>
 
-    {{#is_multimodal}}
-      <h3>Multimodal signals</h3>
-      <table>
-        <tr><th>Driver</th><td>{{driver}}</td></tr>
-        <tr><th>Text contribution</th><td>{{text_contrib}}</td></tr>
-        <tr><th>Image mismatch contribution</th><td>{{img_contrib}}</td></tr>
-        <tr><th>CLIP similarity (0–1)</th><td>{{clip_sim01}}</td></tr>
-        <tr><th>Mismatch probability</th><td>{{clip_mismatch}}</td></tr>
-      </table>
-    {{/is_multimodal}}
+    <div class="metric">
+      <div class="metric-label">Similarity score (0–1)</div>
+      <div class="metric-value">{{raw_clip_similarity_01}}</div>
+    </div>
 
-    {{#has_explanation}}
-      <h3>Explanation</h3>
-      <p>{{explain_summary}}</p>
+    <div class="metric">
+      <div class="metric-label">Mismatch score (0–1)</div>
+      <div class="metric-value">{{raw_clip_mismatch}}</div>
+    </div>
 
-      {{#has_flags}}
-        <h4>Flags</h4>
-        <ul>
-          {{#flags}}
-            <li><strong>{{name}}</strong> ({{severity}}) — {{rationale}}</li>
-          {{/flags}}
-        </ul>
-      {{/has_flags}}
+    <div class="metric">
+      <div class="metric-label">Text contribution</div>
+      <div class="metric-value">{{raw_text_contrib}}</div>
+    </div>
 
-      <h4>Top SHAP tokens</h4>
-      <table>
-        <tr><th>Token</th><th>Impact</th></tr>
-        {{#shap_tokens}}
-          <tr><td>{{token}}</td><td>{{impact}}</td></tr>
-        {{/shap_tokens}}
-      </table>
-
-      {{#has_gradcam}}
-        <h3>Visual explanation</h3>
-        <p>{{gradcam_summary}}</p>
-        <p class="muted">Activation strength: {{gradcam_strength}}</p>
-
-        {{#has_gradcam_image}}
-          <img class="gradcam-image" src="{{gradcam_path}}" alt="Grad-CAM heatmap">
-        {{/has_gradcam_image}}
-      {{/has_gradcam}}
-    {{/has_explanation}}
-
-    <details style="margin-top:12px;">
-      <summary>Raw JSON</summary>
-      <pre>{{raw_json}}</pre>
-    </details>
+    <div class="metric">
+      <div class="metric-label">Image contribution</div>
+      <div class="metric-value">{{raw_img_contrib}}</div>
+    </div>
   </div>
-  {{/has_result}}
+</div>
+
+{{#has_gradcam}}
+<div class="card">
+  <h3>Visual Output</h3>
+  <p><strong>Summary:</strong> {{gradcam_summary}}</p>
+  <p><strong>Activation strength:</strong> {{gradcam_strength}}</p>
+
+  {{#has_gradcam_image}}
+    <img class="gradcam-image" src="{{gradcam_path}}" alt="Grad-CAM heatmap">
+  {{/has_gradcam_image}}
+</div>
+{{/has_gradcam}}
+
+<div class="card">
+  <h3>Raw JSON</h3>
+  <pre>{{raw_json}}</pre>
+</div>
+{{/has_result}}
 
 </body>
 </html>
