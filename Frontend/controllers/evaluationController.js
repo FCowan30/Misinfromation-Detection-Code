@@ -51,6 +51,9 @@ exports.renderEvaluationPage = (req, res) => {
 };
 
 exports.startRetrain = (req, res) => {
+  // ✅ FIX: args was missing → this is why retraining never started
+  const args = ["-m", "Backend.Evaluation.train_and_eval"];
+
   const py = spawn(pythonPath, args, {
     cwd: projectRoot,
     shell: false,
@@ -58,6 +61,7 @@ exports.startRetrain = (req, res) => {
     stdio: ["ignore", "pipe", "pipe"]
   });
 
+  // ✅ Logging so you can actually see errors
   py.stdout.on("data", (data) => {
     console.log("[RETRAIN STDOUT]", data.toString());
   });
@@ -68,6 +72,10 @@ exports.startRetrain = (req, res) => {
 
   py.on("error", (err) => {
     console.error("[RETRAIN PROCESS ERROR]", err);
+  });
+
+  py.on("close", (code) => {
+    console.log(`[RETRAIN PROCESS CLOSED] Exit code: ${code}`);
   });
 
   res.json({

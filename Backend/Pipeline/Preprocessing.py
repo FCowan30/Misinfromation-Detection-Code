@@ -12,7 +12,7 @@ from Backend.Datasets.kaggle import load_kaggle
 from Backend.Datasets.fever import load_fever
 from Backend.Datasets.pubhealth import load_pubhealth
 from Backend.Datasets.social_covid import load_social
-
+from Backend.Datasets.Liar import load_liar_dataset
 
 REQUIRED_COLS = ["text", "label", "domain", "source"]
 
@@ -22,17 +22,38 @@ def load_all_datasets(
     include_fever: bool = True,
     include_pubhealth: bool = True,
     include_social: bool = True,
+    include_liar: bool = True,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
 
     if include_kaggle:
         frames.append(load_kaggle())
+
     if include_fever:
         frames.append(load_fever())
+
     if include_pubhealth:
         frames.append(load_pubhealth())
+
     if include_social:
         frames.append(load_social())
+
+    if include_liar:
+        liar_train, liar_eval, liar_test = load_liar_dataset("Data/LIAR")
+
+        liar_train = liar_train.copy()
+        liar_eval = liar_eval.copy()
+        liar_test = liar_test.copy()
+
+        liar_train["domain"] = "political"
+        liar_eval["domain"] = "political"
+        liar_test["domain"] = "political"
+
+        liar_train["source"] = "liar_train"
+        liar_eval["source"] = "liar_eval"
+        liar_test["source"] = "liar_test"
+
+        frames.extend([liar_train, liar_eval, liar_test])
 
     if not frames:
         raise ValueError("No datasets selected.")
@@ -69,7 +90,6 @@ def clean_combined(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # SOCIAL / TWEET DATA CLEANING
     # -----------------------------
-
     before_filter = len(df)
 
     # Remove very short posts
@@ -86,12 +106,10 @@ def clean_combined(df: pd.DataFrame) -> pd.DataFrame:
     # -----------------------------
     # REMOVE DUPLICATES
     # -----------------------------
-
     before = len(df)
     df = df.drop_duplicates(subset=["text"]).reset_index(drop=True)
 
     print(f"[INFO] Removed {before - len(df)} duplicate texts")
-
     print("[INFO] Cleaned dataset shape:", df.shape)
 
     return df
@@ -114,11 +132,9 @@ def tokenize_and_save(
     except ImportError as e:
         raise ImportError("Missing transformers. Install with: pip install transformers") from e
 
-    #  Keep only safe columns BEFORE Arrow conversion
     keep_cols = ["text", "label", "domain", "source"]
     df = df[keep_cols].copy()
 
-    #  Enforce clean types
     df["text"] = df["text"].astype(str)
     df["label"] = df["label"].astype(int)
     df["domain"] = df["domain"].astype(str)
@@ -134,7 +150,6 @@ def tokenize_and_save(
 
     tokenized = splits.map(tok, batched=True)
 
-    # Keep only Trainer-needed cols
     keep = {"input_ids", "attention_mask", "label"}
     remove_cols = [c for c in tokenized["train"].column_names if c not in keep]
     tokenized = tokenized.remove_columns(remove_cols)
@@ -156,6 +171,7 @@ if __name__ == "__main__":
         include_fever=True,
         include_pubhealth=True,
         include_social=True,
+        include_liar=True,
     )
     df_all = clean_combined(df_all)
     tokenize_and_save(df_all)

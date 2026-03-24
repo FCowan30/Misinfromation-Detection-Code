@@ -215,7 +215,7 @@ def generate_gradcam(
                 "activation_strength": 0.0,
                 "peak_location": {"row": 0, "col": 0},
                 "grid_shape": {"height": int(grid_size), "width": int(grid_size)},
-           }
+            }
 
     # Upsample to original image size
     cam_t = torch.tensor(cam, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
@@ -241,8 +241,11 @@ def generate_gradcam(
     output_path = os.path.join(output_dir, output_name)
     _save_overlay(image_np, cam_up, output_path)
 
+    # Return a web-ready relative path for Express static serving
+    web_path = f"gradcam/{output_name}".replace("\\", "/")
+
     return {
-        "heatmap_path": output_path.replace("\\", "/"),
+        "heatmap_path": web_path,
         "top_region_summary": (
             f"The visual explanation indicates that the model focused mainly on {region_text} "
             f"when comparing the image with the text."

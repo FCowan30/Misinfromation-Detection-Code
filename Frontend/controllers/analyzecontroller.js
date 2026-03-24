@@ -135,11 +135,8 @@ function buildCommonViewModel(obj, text, explain) {
         : "";
 
     if (gradcam.heatmap_path) {
-      gradcamPath =
-        "/" + gradcam.heatmap_path
-          .replace(/^FrontEnd\/public\//, "")
-          .replace(/\\/g, "/");
-      hasGradcamImage = true;
+      gradcamPath = "/" + String(gradcam.heatmap_path).replace(/\\/g, "/");
+          hasGradcamImage = true;
     }
   }
 

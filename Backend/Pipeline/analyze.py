@@ -1,8 +1,8 @@
-# Backend/Pipeline/analyze.py
 from __future__ import annotations
 
 from typing import Optional, Dict, Any
 import os
+import sys
 
 from Backend.Models.DistillBERT_Predict import predict_text
 from Backend.Models.Fusion import fuse_multimodal
@@ -12,22 +12,26 @@ from Backend.Models.claim_router import detect_claim_type, decide_descriptive_vi
 # SHAP + NLG explainers
 try:
     from Backend.Explainers.Shap_DistilBERT import explain_text
-except Exception:
+except Exception as e:
+    print(f"[SHAP IMPORT ERROR] {type(e).__name__}: {e}", file=sys.stderr)
     explain_text = None
 
 try:
     from Backend.Explainers.NLG_basic import generate_basic_explanation
-except Exception:
+except Exception as e:
+    print(f"[NLG BASIC IMPORT ERROR] {type(e).__name__}: {e}", file=sys.stderr)
     generate_basic_explanation = None
 
 try:
     from Backend.Explainers.NLG_detailed import generate_detailed_explanation
-except Exception:
+except Exception as e:
+    print(f"[NLG DETAILED IMPORT ERROR] {type(e).__name__}: {e}", file=sys.stderr)
     generate_detailed_explanation = None
 
 try:
     from Backend.Explainers.Grad_CAM import generate_gradcam
-except Exception:
+except Exception as e:
+    print(f"[GRADCAM IMPORT ERROR] {type(e).__name__}: {e}", file=sys.stderr)
     generate_gradcam = None
 
 
@@ -71,21 +75,29 @@ def _maybe_explain(text: str, explain: bool, top_n: int = 10) -> Optional[Dict[s
     if not explain:
         return None
     if explain_text is None:
+        print("[SHAP ERROR] explain_text import failed.", file=sys.stderr)
         return {"error": "Explainability module not available (SHAP import failed)."}
     try:
         return explain_text(text, top_n=top_n)
     except Exception as e:
+        print(f"[SHAP ERROR] {type(e).__name__}: {e}", file=sys.stderr)
         return {"error": f"SHAP explain failed: {type(e).__name__}: {e}"}
 
 
 def _maybe_gradcam(image_path: str, text: str, explain: bool) -> Optional[Dict[str, Any]]:
     if not explain:
         return None
+
     if generate_gradcam is None:
+        print("[GRADCAM ERROR] generate_gradcam import failed.", file=sys.stderr)
         return {"error": "Grad-CAM module not available (generate_gradcam import failed)."}
+
     try:
-        return generate_gradcam(image_path=image_path, text=text)
+        result = generate_gradcam(image_path=image_path, text=text)
+        print(f"[GRADCAM SUCCESS] Result: {result}", file=sys.stderr)
+        return result
     except Exception as e:
+        print(f"[GRADCAM ERROR] {type(e).__name__}: {e}", file=sys.stderr)
         return {"error": f"Grad-CAM failed: {type(e).__name__}: {e}"}
 
 
