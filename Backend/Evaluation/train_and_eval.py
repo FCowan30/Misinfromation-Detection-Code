@@ -131,15 +131,22 @@ def main():
         write_status("training", "Training DistilBERT model...")
 
         training_args = TrainingArguments(
-            output_dir=str(ARTIFACTS_DIR / "model"),
-            evaluation_strategy="epoch",
+            output_dir="artifacts/model",
+            eval_strategy="epoch",
             save_strategy="epoch",
             logging_strategy="epoch",
-            num_train_epochs=2,
-            per_device_train_batch_size=16,
+            num_train_epochs=3,
+            learning_rate=2e-5,
+            weight_decay=0.01,
+            warmup_ratio=0.1,
+            per_device_train_batch_size=8,
             per_device_eval_batch_size=32,
+            load_best_model_at_end=True,
+            metric_for_best_model="f1",
+            greater_is_better=True,
             report_to="none",
         )
+
 
         trainer = Trainer(
             model=model,

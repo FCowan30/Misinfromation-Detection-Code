@@ -51,16 +51,24 @@ exports.renderEvaluationPage = (req, res) => {
 };
 
 exports.startRetrain = (req, res) => {
-  const args = ["-m", "Backend.Evaluation.train_and_eval"];
-
   const py = spawn(pythonPath, args, {
     cwd: projectRoot,
     shell: false,
-    detached: true,
-    stdio: "ignore"
+    detached: false,
+    stdio: ["ignore", "pipe", "pipe"]
   });
 
-  py.unref();
+  py.stdout.on("data", (data) => {
+    console.log("[RETRAIN STDOUT]", data.toString());
+  });
+
+  py.stderr.on("data", (data) => {
+    console.error("[RETRAIN STDERR]", data.toString());
+  });
+
+  py.on("error", (err) => {
+    console.error("[RETRAIN PROCESS ERROR]", err);
+  });
 
   res.json({
     ok: true,
