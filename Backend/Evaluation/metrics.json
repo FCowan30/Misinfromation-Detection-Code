@@ -1,0 +1,14 @@
+{
+  "accuracy": 0.8821,
+  "precision": 0.8953,
+  "recall": 0.936,
+  "f1": 0.9152,
+  "roc_auc": 0.9407,
+  "train_size": 124614,
+  "eval_size": 31154,
+  "last_updated": "2026-03-25T02:26:04",
+  "plots": {
+    "confusion_matrix": "/evaluation/plots/confusion_matrix.png",
+    "roc_curve": "/evaluation/plots/roc_curve.png"
+  }
+}

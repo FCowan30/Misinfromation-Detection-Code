@@ -22,7 +22,7 @@ from transformers import (
     DataCollatorWithPadding,
 )
 
-from Backend.Pipeline.preprocessing import load_all_datasets, clean_combined, tokenize_and_save
+from Backend.Pipeline.Preprocessing import load_all_datasets, clean_combined, tokenize_and_save
 from Backend.config import ARTIFACTS_DIR
 
 EVAL_DIR = Path("Backend/Evaluation")

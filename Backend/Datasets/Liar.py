@@ -86,7 +86,7 @@ def load_liar_split(file_path: str) -> pd.DataFrame:
 # ----------------------------------------
 def load_liar_dataset(data_dir: str = "Data/LIAR") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     train_path = os.path.join(data_dir, "train.tsv")
-    eval_path = os.path.join(data_dir, "eval.tsv")
+    eval_path = os.path.join(data_dir, "valid.tsv")
     test_path = os.path.join(data_dir, "test.tsv")
 
     train_df = load_liar_split(train_path)
