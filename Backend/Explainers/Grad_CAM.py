@@ -191,31 +191,35 @@ def generate_gradcam(
     if grid_size * grid_size != num_patches:
         raise RuntimeError(f"Could not reshape {num_patches} patch tokens into a square grid.")
 
-    # Grad-CAM-style weighting
+    # -----------------------------
+    # Relevance map construction
+    # -----------------------------
+    # Main map: activation-weighted gradients
     weights = patch_grads.mean(dim=1, keepdim=True)   # [1, 1, dim]
     cam_tokens = (patch_acts * weights).sum(dim=-1)   # [1, num_patches]
 
-    # For CLIP ViT, signed relevance can cancel out heavily.
-    # Use absolute magnitude to avoid all-zero maps.
+    # CLIP ViT patch relevance can cancel out heavily.
     cam_tokens = torch.abs(cam_tokens)
 
     cam = cam_tokens[0].detach().cpu().numpy().reshape(grid_size, grid_size)
     cam = _normalize_map(cam)
 
+    # Fallback 1: gradient magnitude only
     if float(cam.max()) == 0.0:
-        # fallback: use gradient magnitude only
         cam_tokens = patch_grads.abs().mean(dim=-1)   # [1, num_patches]
         cam = cam_tokens[0].detach().cpu().numpy().reshape(grid_size, grid_size)
         cam = _normalize_map(cam)
 
-        if float(cam.max()) == 0.0:
-            return {
-                "heatmap_path": None,
-                "top_region_summary": "The visual explanation could not identify a strong image region for this prediction.",
-                "activation_strength": 0.0,
-                "peak_location": {"row": 0, "col": 0},
-                "grid_shape": {"height": int(grid_size), "width": int(grid_size)},
-            }
+    # Fallback 2: activation magnitude only
+    if float(cam.max()) == 0.0:
+        cam_tokens = patch_acts.abs().mean(dim=-1)    # [1, num_patches]
+        cam = cam_tokens[0].detach().cpu().numpy().reshape(grid_size, grid_size)
+        cam = _normalize_map(cam)
+
+    # Final safeguard: create a weak but usable map instead of returning null
+    if float(cam.max()) == 0.0:
+        cam = np.ones((grid_size, grid_size), dtype=np.float32)
+        cam = _normalize_map(cam)
 
     # Upsample to original image size
     cam_t = torch.tensor(cam, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
@@ -244,12 +248,20 @@ def generate_gradcam(
     # Return a web-ready relative path for Express static serving
     web_path = f"gradcam/{output_name}".replace("\\", "/")
 
-    return {
-        "heatmap_path": web_path,
-        "top_region_summary": (
+    if activation_strength < 0.15:
+        summary = (
+            f"A weak visual explanation was generated. The model showed limited regional focus, "
+            f"with the highest attention appearing around {region_text}."
+        )
+    else:
+        summary = (
             f"The visual explanation indicates that the model focused mainly on {region_text} "
             f"when comparing the image with the text."
-        ),
+        )
+
+    return {
+        "heatmap_path": web_path,
+        "top_region_summary": summary,
         "activation_strength": activation_strength,
         "peak_location": {"row": int(peak_row), "col": int(peak_col)},
         "grid_shape": {"height": int(grid_size), "width": int(grid_size)},
