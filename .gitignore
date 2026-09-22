@@ -6,7 +6,7 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Raw data (do not commit contents)
+# Raw data
 data/
 *.csv
 *.tsv
